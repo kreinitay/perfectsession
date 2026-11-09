@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en" data-theme="purple">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Perfect Season — 82-0 &amp; 38-0</title>
+<meta name="description" content="Draft legends, go undefeated. The 82-0 basketball challenge and the 38-0 football challenge, with historic seasons, decades, World Cups and four difficulties.">
+<meta name="theme-color" content="#0e0817">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23160d26'/%3E%3Ctext x='32' y='43' font-family='Arial Black,Arial' font-weight='900' font-size='26' text-anchor='middle' fill='%23c99bff'%3E82%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800;900&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script>
+  try { var t = JSON.parse(localStorage.getItem("ps_theme") || "null"); if (t) document.documentElement.setAttribute("data-theme", t); } catch (e) {}
+</script>
+</head>
+<body>
+  <div class="backdrop" aria-hidden="true"><div class="blob b1"></div><div class="blob b2"></div><div class="lines"></div></div>
+  <header class="topbar">
+    <button class="brand" data-nav="home" aria-label="Perfect Season home">
+      <span class="brand-mark"><span>82</span><span>38</span></span>
+      <span class="brand-name">Perfect Season</span>
+    </button>
+    <nav class="nav" aria-label="Main">
+      <button data-nav="setup-bb">82-0</button>
+      <button data-nav="setup-fb">38-0</button>
+      <button data-nav="daily">Daily</button>
+      <button data-nav="records">Records</button>
+      <button data-nav="database">Players</button>
+      <button data-nav="settings">Settings</button>
+      <button class="theme-btn" data-nav="theme" aria-label="Change colors"><span class="swatch"></span><span class="theme-label">Colors</span></button>
+    </nav>
+  </header>
+  <main id="app" tabindex="-1"></main>
+  <div id="toasts" aria-live="polite"></div>
+  <canvas id="confetti" aria-hidden="true"></canvas>
+
+  <script src="data-nba.js"></script>
+  <script src="data-euro.js"></script>
+  <script src="data-football.js"></script>
+  <script src="engine.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
