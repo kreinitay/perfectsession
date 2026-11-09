@@ -14,7 +14,7 @@
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const $ = (s, el) => (el || document).querySelector(s);
   const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
-  const SET = Object.assign({ led: true, spinAnim: true, speed: 3, sound: false, confetti: true, reveal: false, autoPlace: true }, store.get("settings", {}));
+  const SET = Object.assign({ led: true, spinAnim: true, speed: 3, sound: false, confetti: true, reveal: true, autoPlace: true }, store.get("settings", {}));
   const saveSet = () => { store.set("settings", SET); document.body.classList.toggle("no-led", !SET.led); };
   document.body.classList.toggle("no-led", !SET.led);
   let actx = null;
@@ -34,10 +34,10 @@
 
   // ---------- state ----------
   const DEF = {
-    bb: { modeId: "nba_all", tab: "all", diff: "normal", style: "spin3", bench: true, showRatings: !!SET.reveal, teamName: "" },
-    fb: { modeId: "fb_all", tab: "alltime", diff: "normal", style: "spin3", formation: "2-2-1", showRatings: !!SET.reveal, teamName: "" }
+    bb: { modeId: "nba_all", tab: "all", diff: "normal", style: "spinfull", bench: true, showRatings: true, teamName: "", groupBy: "season", simLevel: 3 },
+    fb: { modeId: "fb_all", tab: "alltime", diff: "normal", style: "spinfull", formation: "2-2-1", showRatings: true, teamName: "", groupBy: "season", simLevel: 3, league: "GB1", ucl: true }
   };
-  const saved = store.get("setup", {});
+  const saved = store.get("setup2", {});
   const S = {
     screen: "home", sport: "bb",
     setup: { bb: Object.assign({}, DEF.bb, saved.bb || {}), fb: Object.assign({}, DEF.fb, saved.fb || {}) },
@@ -107,13 +107,13 @@
     ov.innerHTML = `<div class="panel" role="dialog" aria-modal="true" aria-labelledby="htT"><h2 id="htT">How to play</h2>
       <ol class="howto">
         <li><b>Pick a game.</b> 82-0 is basketball, 38-0 is football. Choose a version (all-time, a decade, a historic season, World Cup, a league) and a difficulty.</li>
-        <li><b>Draft your team.</b> Spin a random team and season and take a player from it, or pick from 5 cards, or spend a salary cap. Each player shows the season you get him from.</li>
-        <li><b>Put players where they belong.</b> Natural positions play at 100%. Out of position costs you, and a non-keeper in goal is a disaster.</li>
+        <li><b>Draft your team.</b> Spin a random team and season and take a player from it, or pick from 5 cards, or spend a salary cap. Don't like the spin? A <b>year swap</b> keeps the team but changes the season, a <b>team swap</b> keeps the season but changes the team.</li>
+        <li><b>Put players where they belong.</b> Basketball: a player's own position and the ones next to it are fine, two away costs 20%, further isn't allowed (no Isiah Thomas at center). Football: a striker can play midfield at -35% but never defense, and only keepers go in goal.</li>
         <li><b>Chemistry.</b> Players from the same team within two seasons of each other add a small bonus.</li>
         <li><b>Play the season.</b> Watch every game or skip to the end. Then come the playoffs or knockouts.</li>
         <li><b>The goal:</b> win every game and the title. Ratings can stay hidden for a true ball-knowledge test.</li>
       </ol>
-      <p class="muted small" style="margin-top:10px">Keyboard: <b>Space</b> spins or deals, <b>1-5</b> picks a player, <b>Q W E R T</b> places him (in the order the spots are listed).</p>
+      <p class="muted small" style="margin-top:10px">Keyboard: <b>Space</b> spins or deals, <b>Y</b> year swap, <b>G</b> team swap, <b>1-9</b> picks a player, <b>Q W E R T</b> places him.</p>
       <div class="row" style="justify-content:flex-end;margin-top:16px"><button class="btn" data-close>Got it</button></div></div>`;
     document.body.appendChild(ov);
     ov.addEventListener("click", (e) => { if (e.target.closest("[data-close]") || e.target === ov) ov.remove(); });
@@ -125,11 +125,9 @@
     const t = document.createElement("div"); t.className = "toast"; t.innerHTML = `<b>${esc(title)}</b>${esc(body || "")}`;
     $("#toasts").appendChild(t); setTimeout(() => t.remove(), 4200);
   }
-  const posLabel = (p) => p.pos.join("/");
-  function instMeta(g, i) {
-    const lab = E.groupLabel(g.mode, i.team, i.y);
-    return lab.title + " · " + lab.sub;
-  }
+  const youngTag = (i) => i.young ? `<span class="tag rookie">${i.p.sport === "fb" ? "Wonderkid" : "Rookie"}</span>` : "";
+  const seasonLabel = (g, i) => g.mode.kind === "wc" ? "World Cup " + i.y : E.seasonStr(i.y);
+  function instMeta(g, i) { return E.teamName(g.mode, i.team, i.y) + " · " + seasonLabel(g, i); }
   const ratingHtml = (g, i, cls) => (g.showRatings || g.revealed) ? `<span class="${cls}">${i.r}</span>` : `<span class="${cls} q">?</span>`;
   const recordStr = (sport, s) => sport === "fb" ? `${s.w}-${s.d}-${s.l}` : `${s.w}-${s.l}`;
   const goalName = (g) => g.mode.games + "-0";
@@ -200,7 +198,7 @@
   }
 
   // ---------- SETUP ----------
-  function saveSetup() { store.set("setup", S.setup); }
+  function saveSetup() { store.set("setup2", S.setup); }
   function renderSetup() {
     const sp = S.sport, st = S.setup[sp], tabs = sp === "bb" ? BB_TABS : FB_TABS;
     const mode = E.modes[st.modeId];
@@ -223,6 +221,17 @@
           <hr class="sep">
           <div class="step"><h3>How you draft</h3><p class="muted small">How players are offered to you each round.</p><div class="tiles">${STYLES.map(styleTile).join("")}</div></div>
           <hr class="sep">
+          <div class="step"><h3>Spin by</h3><p class="muted small">${mode.single ? "This version is one season, so you always spin a team." : "Spin one exact season of a team, or a whole franchise and take any player from any of its years."}</p>
+            <div class="tiles"><button class="tile ${st.groupBy !== "franchise" || mode.single ? "on" : ""}" data-group="season"><b>Team + season</b><span>Example: ${sp === "bb" ? "1995-96 Bulls" : "Barcelona 2010-11"}. Only that year's roster.</span></button>
+              <button class="tile ${st.groupBy === "franchise" && !mode.single ? "on" : ""} ${mode.single ? "disabled" : ""}" data-group="franchise" ${mode.single ? "disabled" : ""}><b>Whole franchise</b><span>Example: ${sp === "bb" ? "Bulls, any year" : "Barcelona, any year"}. Each player at his best season there.</span></button></div></div>
+          <hr class="sep">
+          <div class="step"><h3>Season simulation</h3><p class="muted small">How strong the other teams are once your season starts. 3 is normal.</p>
+            <div class="tiles sim-tiles">${[1, 2, 3, 4, 5].map(n => `<button class="tile ${(st.simLevel || 3) === n ? "on" : ""}" data-sim="${n}"><b>${n}</b><span>${E.SIM_LEVELS[n]}</span></button>`).join("")}</div></div>
+          <hr class="sep">
+          ${sp === "fb" && mode.kind !== "wc" ? `<div class="step"><h3>Your league</h3><p class="muted small">Who you play your 38 league games against. Every league is balanced the same.</p>
+            <div class="tiles">${E.BIG5.map(l => `<button class="tile ${(st.league || mode.homeLeague || "GB1") === l ? "on" : ""}" data-league="${l}"><b>${E.LEAGUE_NAMES[l]}</b><span>${{ GB1: "England", ES1: "Spain", IT1: "Italy", L1: "Germany", FR1: "France" }[l]}</span></button>`).join("")}</div>
+            <label class="toggle" style="margin-top:14px"><input type="checkbox" id="uclT" ${st.ucl !== false ? "checked" : ""}><span><b>Also play the Champions League</b><br><span class="muted small">8-game league phase, then two-legged knockouts and a final</span></span></label></div>
+          <hr class="sep">` : ""}
           <div class="step"><h3>${sp === "bb" ? "Roster" : "Formation"}</h3>
             ${sp === "bb"
               ? `<p class="muted small">Bench players add depth to your rating.</p><div class="tiles"><button class="tile ${!st.bench ? "on" : ""}" data-bench="0"><b>Starting 5</b><span>Five picks. Quick and pure.</span></button><button class="tile ${st.bench ? "on" : ""}" data-bench="1"><b>Starting 5 + 3 bench</b><span>Eight picks. Depth matters.</span></button></div>`
@@ -233,8 +242,9 @@
           <h3>Your season</h3>
           <dl><dt>Version</dt><dd>${esc(mode.name)}</dd><dt>Difficulty</dt><dd>${E.DIFFS[st.diff].name}</dd><dt>Draft</dt><dd>${styleName(st.style)}</dd>
             <dt>${sp === "bb" ? "Roster" : "Formation"}</dt><dd>${sp === "bb" ? (st.bench ? "5 + 3 bench" : "Starting 5") : "GK + " + st.formation}</dd><dt>Goal</dt><dd>${mode.games}-0 and the title</dd>
-            <dt>Respins</dt><dd>${st.style === "salary" ? "None" : E.DIFFS[st.diff].skips}</dd></dl>
-          <label class="toggle"><input type="checkbox" id="showR" ${st.showRatings || st.style === "salary" ? "checked" : ""} ${st.style === "salary" ? "disabled" : ""}><span>Show ratings while drafting<br><span class="muted small">Off means pure ball knowledge</span></span></label>
+            <dt>Swaps</dt><dd>${st.style === "salary" ? "None" : st.style === "cards" ? E.DIFFS[st.diff].skips + " redraws" : mode.single || st.groupBy === "franchise" ? E.DIFFS[st.diff].skips + " team" : E.DIFFS[st.diff].skips + " year + " + E.DIFFS[st.diff].skips + " team"}</dd>
+            <dt>Season sim</dt><dd>${st.simLevel || 3} · ${E.SIM_LEVELS[st.simLevel || 3]}</dd>${sp === "fb" && mode.kind !== "wc" ? `<dt>League</dt><dd>${E.LEAGUE_NAMES[st.league || mode.homeLeague || "GB1"]}${st.ucl !== false ? " + UCL" : ""}</dd>` : ""}</dl>
+          <label class="toggle"><input type="checkbox" id="showR" ${st.showRatings !== false || st.style === "salary" ? "checked" : ""} ${st.style === "salary" ? "disabled" : ""}><span>Show ratings while drafting<br><span class="muted small">Turn off for pure ball knowledge</span></span></label>
           <input class="field" id="tname" maxlength="28" placeholder="Team name (optional)" value="${esc(st.teamName)}">
           <button class="btn big" id="startBtn">Start draft</button>
         </aside>
@@ -249,11 +259,15 @@
       else if (b.dataset.style) st.style = b.dataset.style;
       else if (b.dataset.bench) st.bench = b.dataset.bench === "1";
       else if (b.dataset.form) st.formation = b.dataset.form;
+      else if (b.dataset.group) st.groupBy = b.dataset.group;
+      else if (b.dataset.sim) st.simLevel = +b.dataset.sim;
+      else if (b.dataset.league) st.league = b.dataset.league;
       else if (b.id === "startBtn" || b.id === "startBtn2") { st.teamName = $("#tname").value.trim(); saveSetup(); return startGame(Object.assign({}, st), null); }
       else return;
       st.teamName = $("#tname").value.trim(); saveSetup(); renderSetup();
     };
     $("#showR").onchange = (e) => { st.showRatings = e.target.checked; saveSetup(); };
+    const ut = $("#uclT"); if (ut) ut.onchange = () => { st.ucl = ut.checked; saveSetup(); renderSetup(); };
   }
 
   // ---------- GAME START ----------
@@ -276,8 +290,8 @@
     const d = store.get("daily", {}); const key = todayStr() + "|" + sport;
     if (d[key]) return toast("Already played", "Come back tomorrow for a new daily.");
     const opt = sport === "bb"
-      ? { modeId: "nba_all", diff: "normal", style: "spin3", bench: true, showRatings: false, teamName: "Daily Squad" }
-      : { modeId: "fb_all", diff: "normal", style: "spin3", formation: "2-2-1", showRatings: false, teamName: "Daily XI" };
+      ? { modeId: "nba_all", diff: "normal", style: "spinfull", bench: true, showRatings: true, teamName: "Daily Squad", groupBy: "season", simLevel: 3 }
+      : { modeId: "fb_all", diff: "normal", style: "spinfull", formation: "2-2-1", showRatings: true, teamName: "Daily XI", groupBy: "season", simLevel: 3, league: "GB1", ucl: true };
     S.sport = sport;
     startGame(opt, { date: todayStr(), sport, key });
   }
@@ -302,10 +316,10 @@
     const style = pos ? `style="left:${pos[0]}%;top:${pos[1]}%"` : "";
     const lab = r.slot.pos === "BN" ? "Bench" : r.slot.pos;
     if (!i) return `<div class="slot ${t ? "target" : ""}" data-slot="${idx}" ${style} ${t ? 'role="button" tabindex="0"' : ""}><span class="sp">${lab}</span><span class="meta">${t ? "Place here" : "Empty"}</span></div>`;
-    const f = E.fit(i.p, r.slot.pos);
+    const f = E.fit(i, r.slot.pos);
     const showR = g.showRatings || g.revealed;
     return `<div class="slot filled" data-slot="${idx}" ${style}>${showR ? `<span class="rt">${Math.round(i.r * f)}</span>` : ""}<span class="sp">${lab}</span><span class="nm">${esc(i.p.name)}</span>
-      <span class="meta">${esc(E.groupLabel(g.mode, i.team, i.y).sub)}${f < 1 ? ` · <span class="fitw">${Math.round(f * 100)}% fit</span>` : ""}${g.style === "salary" ? ` · $${i.price}M` : ""}</span></div>`;
+      <span class="meta">${esc(seasonLabel(g, i))}${f < 1 ? ` · <span class="fitw">${Math.round(f * 100)}% fit</span>` : ""}${g.style === "salary" ? ` · $${i.price}M` : ""}</span></div>`;
   }
   function fieldHtml(g, targets) {
     const pos = slotPositions(g);
@@ -319,12 +333,12 @@
     const tr = E.teamRating(g.sport, g.roster);
     const done = filled === total;
     const targets = new Set();
-    if (u.sel) g.roster.forEach((r, i) => { if (!r.inst) targets.add(i); });
+    if (u.sel) g.roster.forEach((r, i) => { if (!r.inst && E.fit(u.sel, r.slot.pos) > 0) targets.add(i); });
     app.innerHTML = `
       <div class="draft-top">
         <span class="pill">${esc(g.mode.name)} · ${E.DIFFS[g.diff].name}${S.daily ? " · Daily" : ""}</span>
         <span class="pill">${done ? `All <b>${total}</b> picked` : `Pick <b>${filled + 1}</b> of ${total}`}</span>
-        ${g.style === "salary" ? `<span class="pill">Budget <b>$${g.budget - E.spent(g)}M</b> left</span>` : `<span class="pill">Respins <b>${g.skips}</b></span>`}
+        ${g.style === "salary" ? `<span class="pill">Budget <b>$${g.budget - E.spent(g)}M</b> left</span>` : (g.style === "cards" ? `<span class="pill">Redraws <b>${g.teamSwaps}</b></span>` : g.groupBy === "franchise" || g.mode.single ? `<span class="pill">Team swaps <b>${g.teamSwaps}</b></span>` : `<span class="pill">Swaps <b>${g.yearSwaps}</b> year · <b>${g.teamSwaps}</b> team</span>`)}
         <span class="pill">Team <b>${g.showRatings && filled ? tr.ovr : "?"}</b></span>
         ${tr.chem > 0 ? `<span class="pill">Chemistry <b>+${tr.chem}</b></span>` : ""}
         <span class="spacer"></span><button class="btn ghost small" id="help">How to play</button><button class="btn ghost small" id="quit">Quit draft</button>
@@ -345,23 +359,25 @@
     if (g.style === "salary") return salaryHtml(g);
     if (g.style === "cards") {
       if (!u.cards) return `<h2>Deal your cards</h2><p class="muted">Five random players. Keep one per round.</p><div><button class="btn big" id="deal">Deal 5 cards</button></div>`;
-      return `<div class="row"><h3>Pick one</h3><span class="spacer"></span><button class="btn ghost small" id="redraw" ${g.skips ? "" : "disabled"}>Redraw (${g.skips})</button></div>
+      return `<div class="row"><h3>Pick one</h3><span class="spacer"></span><button class="btn ghost small" id="redraw" ${g.teamSwaps ? "" : "disabled"}>Redraw (${g.teamSwaps})</button></div>
         <div class="cards5">${u.cards.map((i, k) => `<button class="pcard ${u.sel === i ? "on" : ""}" data-c="${k}" style="animation-delay:${k * 60}ms">
-          ${ratingHtml(g, i, "r")}<span class="ps">${posLabel(i.p)}</span>${i.rookie ? `<span class="tag rookie" style="align-self:flex-start">Rookie</span>` : ""}
+          ${ratingHtml(g, i, "r")}<span class="ps">${E.posShort(i)}</span>${i.young ? `<span style="align-self:flex-start">${youngTag(i)}</span>` : ""}
           <span class="n">${esc(i.p.name)}</span><span class="m">${esc(instMeta(g, i))}</span></button>`).join("")}</div>${placeHtml(g)}`;
     }
     // spin styles
     if (!u.spin) return `<div class="reel" id="reel"><span class="team">Spin a team</span><span class="yr">${g.mode.kind === "wc" ? "Nation + World Cup" : g.mode.single ? "Team" : "Team + season"}</span></div>
       <div><button class="btn big" id="spin">Spin</button></div>`;
     return `<div class="reel" id="reel"><span class="team">${esc(u.spin.label.title)}</span><span class="yr">${esc(u.spin.label.sub)}</span></div>
-      <div class="row"><h3>${g.style === "spin3" ? "Pick one of three" : "Pick anyone"}</h3><span class="spacer"></span><button class="btn ghost small" id="respin" ${g.skips ? "" : "disabled"}>Respin (${g.skips})</button></div>
-      <div class="cands">${u.spin.cands.map((i, k) => `<button class="cand ${u.sel === i ? "on" : ""}" data-k="${k}"><span class="n">${esc(i.p.name)} ${i.rookie ? `<span class="tag rookie">Rookie</span>` : ""}</span>
-        ${ratingHtml(g, i, "r")}<span class="m">${posLabel(i.p)}${g.sport === "fb" ? " · " + esc(window.FB_NATIONS[i.p.nat] || i.p.nat) : ""}</span></button>`).join("")}</div>${placeHtml(g)}`;
+      <div class="row"><h3>${g.style === "spin3" ? "Pick one of three" : "Pick anyone"}</h3><span class="spacer"></span>
+        ${g.groupBy === "franchise" || g.mode.single ? "" : `<button class="btn ghost small" id="swapYear" ${g.yearSwaps ? "" : "disabled"} title="Same team, a different season">Year swap (${g.yearSwaps})</button>`}
+        <button class="btn ghost small" id="swapTeam" ${g.teamSwaps ? "" : "disabled"} title="${g.groupBy === "franchise" ? "A different franchise" : "Same season, a different team"}">Team swap (${g.teamSwaps})</button></div>
+      <div class="cands">${u.spin.cands.map((i, k) => `<button class="cand ${u.sel === i ? "on" : ""}" data-k="${k}"><span class="n">${esc(i.p.name)} ${youngTag(i)}</span>
+        ${ratingHtml(g, i, "r")}<span class="m">${esc(E.posLabel(i))}${g.groupBy === "franchise" ? " · " + esc(seasonLabel(g, i)) : ""}${g.sport === "fb" && i.p.nat && g.mode.kind !== "wc" ? " · " + esc(window.FB_NATIONS[i.p.nat] || i.p.nat) : ""}</span></button>`).join("") || `<p class="empty">Nobody here fits your open spots. Use a swap.</p>`}</div>${placeHtml(g)}`;
   }
   function placeHtml(g) {
     const sel = g.ui.sel; if (!sel) return `<p class="muted small">Choose a player, then where they play.</p>`;
     const open = g.roster.map((r, i) => ({ r, i })).filter(x => !x.r.inst);
-    const fits = open.map(x => ({ i: x.i, pos: x.r.slot.pos, f: E.fit(sel.p, x.r.slot.pos) }));
+    const fits = open.map(x => ({ i: x.i, pos: x.r.slot.pos, f: E.fit(sel, x.r.slot.pos) })).filter(x => x.f > 0);
     const bestF = Math.max(...fits.map(x => x.f));
     const seen = new Set();
     return `<div><p class="small muted" style="margin-bottom:8px">Place ${esc(sel.p.name)}:</p><div class="place">${fits.filter(x => { const k = x.pos; if (seen.has(k)) return false; seen.add(k); return true; })
@@ -369,13 +385,13 @@
   }
   function salaryHtml(g) {
     const u = g.ui, left = g.budget - E.spent(g);
-    const used = new Set(g.roster.filter(r => r.inst).map(r => r.inst.p.id));
+    const used = new Set(g.roster.filter(r => r.inst).map(r => r.inst.p.key));
     const open = g.roster.filter(r => !r.inst).length;
     const posOpts = g.sport === "bb" ? ["ALL", "PG", "SG", "SF", "PF", "C"] : ["ALL", "GK", "DEF", "MID", "ATT"];
     const q = u.sal.q.toLowerCase();
     const minP = g.minPrice || 1;
     const afford = (i) => i.price <= left - minP * (open - 1);
-    let list = g.salary.filter(i => !used.has(i.p.id) && (u.sal.pos === "ALL" || i.p.pos.includes(u.sal.pos)) && (!q || i.p.name.toLowerCase().includes(q)) && (u.sal.all || afford(i)));
+    let list = g.salary.filter(i => !used.has(i.p.key) && E.placeable(i, g.roster) && (u.sal.pos === "ALL" || E.fit(i, u.sal.pos) === 1) && (!q || i.p.name.toLowerCase().includes(q)) && (u.sal.all || afford(i)));
     if (u.sal.sort === "cheap") list = list.slice().sort((a, b) => a.price - b.price || b.r - a.r);
     if (u.sal.sort === "value") list = list.slice().sort((a, b) => (b.r - 60) / b.price - (a.r - 60) / a.price);
     const total = list.length; list = list.slice(0, 150);
@@ -391,7 +407,7 @@
       <p class="muted small">${total} players${total > 150 ? ", showing 150" : ""}</p>
       <div class="sal-list">${list.map(i => { const lock = !afford(i);
         return `<button class="cand ${u.sel === i ? "on" : ""} ${lock ? "locked" : ""}" data-sal="${i.p.id}" ${lock ? "disabled" : ""}><span class="n">${esc(i.p.name)} <span class="tag">${i.r}</span></span>
-          <span class="price">$${i.price}M<small>${posLabel(i.p)}</small></span><span class="m">${esc(instMeta(g, i))}</span></button>`; }).join("") || `<p class="empty">No players match.</p>`}</div>`;
+          <span class="price">$${i.price}M<small>${E.posShort(i)}</small></span><span class="m">${esc(instMeta(g, i))}</span></button>`; }).join("") || `<p class="empty">No players match.</p>`}</div>`;
   }
 
   function placeSel(idx) {
@@ -402,23 +418,25 @@
     if (g.style === "cards" && g.roster.some(r => !r.inst)) u.cards = E.cards(g);
     renderDraft();
   }
-  function doSpin(isRespin) {
+  function doSpin(kind) {
     const g = S.game, u = g.ui;
-    if (isRespin) { if (!g.skips) return; g.skips--; }
-    const prev = u.spin ? new Set([u.spin.key]) : null;
-    const result = E.spin(g, prev);
+    let result;
+    if (kind === "year") { if (!g.yearSwaps) return; result = E.swapYear(g, u.spin); if (!result) return toast("No other seasons", "This team has no other season with players that fit. Try a team swap."); g.yearSwaps--; }
+    else if (kind === "team") { if (!g.teamSwaps) return; result = E.swapTeam(g, u.spin); if (!result) return toast("No other teams", "Nothing else fits your open spots."); g.teamSwaps--; }
+    else result = E.spin(g, u.spin ? new Set([u.spin.key]) : null);
     u.sel = null;
     const keys = Object.keys(g.fgroups);
     const action = $("#action");
     if (reduceMotion || !SET.spinAnim) { u.spin = result; beep(880, 0.08, "triangle"); return renderDraft(); }
     action.innerHTML = `<div class="reel spinning" id="reel"><span class="team"></span><span class="yr"></span></div><div><button class="btn big" disabled>Spinning…</button></div>`;
     const teamEl = $("#reel .team"), yrEl = $("#reel .yr");
+    const reelKeys = kind === "year" ? keys.filter(x => x.split("|")[0] === result.team) : kind === "team" && result.y != null ? keys.filter(x => x.split("|")[1] === String(result.y)) : [];
     let n = 0; const steps = 14;
     const tick = () => {
       if (n >= steps) { u.spin = result; beep(880, 0.12, "triangle", 0.06); return renderDraft(); }
       beep(300 + n * 25, 0.03, "square", 0.025);
-      const k = keys[Math.floor(Math.random() * keys.length)].split("|");
-      const lab = E.groupLabel(g.mode, k[0], +k[1]);
+      const src = reelKeys.length ? reelKeys : keys;
+      const lab = E.labelFor(g, src[Math.floor(Math.random() * src.length)]);
       teamEl.textContent = lab.title; yrEl.textContent = lab.sub;
       n++; later(tick, 25 + n * n * 0.8);
     };
@@ -431,9 +449,10 @@
       if (b.id === "quit") { if (confirm("Quit this draft? Progress will be lost.")) go(S.daily ? "home" : "setup"); return; }
       if (b.id === "help") return howTo();
       if (b.id === "spin") return doSpin(false);
-      if (b.id === "respin") return doSpin(true);
+      if (b.id === "swapYear") return doSpin("year");
+      if (b.id === "swapTeam") return doSpin("team");
       if (b.id === "deal") { u.cards = E.cards(g); return renderDraft(); }
-      if (b.id === "redraw") { if (!g.skips) return; g.skips--; u.cards = E.cards(g); u.sel = null; return renderDraft(); }
+      if (b.id === "redraw") { if (!g.teamSwaps) return; g.teamSwaps--; u.cards = E.cards(g); u.sel = null; return renderDraft(); }
       if (b.id === "playSeason") return playSeason();
       if (b.dataset.k !== undefined) { u.sel = u.spin.cands[+b.dataset.k]; return autoOrRender(); }
       if (b.dataset.c !== undefined) { u.sel = u.cards[+b.dataset.c]; return autoOrRender(); }
@@ -524,31 +543,36 @@
       ${rows.map(({ x, i }) => `<tr class="${x.me ? "me" : ""}"><td>${i + 1}</td><td>${esc(x.me ? g.teamName : x.name)}</td>${fb ? `<td class="num">${x.w}</td><td class="num">${x.d}</td><td class="num">${x.l}</td><td class="num">${x.gf - x.ga > 0 ? "+" : ""}${x.gf - x.ga}</td><td class="num">${x.pts}</td>` : `<td class="num">${x.w}</td><td class="num">${x.l}</td><td class="num">${(x.w / (x.w + x.l)).toFixed(3).replace(/^0/, "")}</td>`}</tr>`).join("")}
       </tbody></table>
       <p style="margin:14px 0 12px">You finished <b>${ordinal(myI + 1)}</b>${s.w === g.mode.games ? ` with a perfect <b>${goalName(g)}</b>.` : "."} Best streak: ${s.bestStreak}.</p>
-      <button class="btn big" id="toPO">${g.playoffs.missed ? "See your season" : g.mode.po === "nba" || g.mode.po === "euro" ? "Go to the playoffs" : "Go to the knockouts"}</button>`;
+      <button class="btn big" id="toPO">${g.playoffs.missed || g.playoffs.kind === "league" ? "See your season" : g.mode.po === "nba" || g.mode.po === "euro" ? "Go to the playoffs" : g.playoffs.kind === "ucl" ? "Go to the Champions League" : "Go to the knockouts"}</button>`;
   }
   const ordinal = (n) => n + (["th", "st", "nd", "rd"][(n % 100 - 20) % 10] || ["th", "st", "nd", "rd"][n % 100] || "th");
 
   // ---------- PLAYOFFS ----------
   function renderPlayoffs() {
     const g = S.game, po = g.playoffs, v = g.view;
-    if (po.missed) return go("results");
+    if (po.missed || po.kind === "league") return finishRun();
     const nameOf = (t) => t.me ? g.teamName : t.name;
     const seriesHtml = (s, type) => {
       const mine = s.a.me || s.b.me;
       const aw = s.winner === s.a;
-      const sa = type === "match" ? s.ga : s.wa, sb = type === "match" ? s.gb : s.wb;
-      const gl = type === "series" ? s.games.map(x => x[0] + "-" + x[1]).join(", ") : type === "single" ? s.games.map(x => x[0] + "-" + x[1]).join("") : (s.note || "");
+      const sa = type === "match" || type === "tie" ? s.ga : s.wa, sb = type === "match" || type === "tie" ? s.gb : s.wb;
+      const gl = type === "series" ? s.games.map(x => x[0] + "-" + x[1]).join(", ") : type === "single" ? s.games.map(x => x[0] + "-" + x[1]).join("") : type === "tie" ? "Legs: " + s.note : (s.note || "");
       return `<div class="series ${mine ? "mine" : ""}"><div class="tm ${aw ? "win" : "lose"}"><span>${esc(nameOf(s.a))}</span><b>${sa}</b></div>
         <div class="tm ${!aw ? "win" : "lose"}"><span>${esc(nameOf(s.b))}</span><b>${sb}</b></div>${gl ? `<span class="gl">${esc(gl)}</span>` : ""}</div>`;
     };
     const shown = po.rounds.slice(0, v.poRound);
-    const out = shown.some(r => r.series.some(s => (s.a.me || s.b.me) && !s.winner.me));
+    const phaseOut = po.kind === "ucl" && shown.length && po.uclRank > 24;
+    const out = phaseOut || shown.some(r => r.series && r.series.some(s => (s.a.me || s.b.me) && !s.winner.me));
+    const roundHtml = (r) => r.type === "phase"
+      ? `<div class="panel round"><h3>${esc(r.name)}: you finished ${ordinal(r.rank)} with ${r.pts} points</h3><p class="muted small" style="margin:-4px 0 10px">${r.rank <= 8 ? "Top 8: straight into the Round of 16." : r.rank <= 24 ? "9th to 24th: into the knockout play-offs." : "25th or lower: out of Europe."}</p>
+          <div class="ticker" style="max-height:none">${r.phase.map(x => `<div class="gm"><span class="res ${x.win ? "W" : x.draw ? "D" : "L"}">${x.win ? "W" : x.draw ? "D" : "L"}</span><span>${x.home ? "vs" : "at"} ${esc(x.opp)}</span><span></span><span class="sc">${x.us}-${x.them}</span></div>`).join("")}</div></div>`
+      : `<div class="panel round"><h3>${esc(r.name)}</h3><div class="series-grid">${r.series.map(s => seriesHtml(s, r.type)).join("")}</div></div>`;
     const over = v.poRound >= po.rounds.length || out;
     app.innerHTML = `
-      <div class="section-head"><div><h1>${g.mode.po === "nba" ? "Playoffs" : g.mode.po === "euro" ? "Playoffs & Final Four" : g.mode.po === "wc" ? "World Cup knockouts" : "Champions League knockouts"}</h1>
-        <p class="muted">Regular season: ${recordStr(g.sport, g.season)}${g.season.w === g.mode.games ? " (perfect)" : ""}</p></div>
+      <div class="section-head"><div><h1>${g.mode.po === "nba" ? "Playoffs" : g.mode.po === "euro" ? "Playoffs & Final Four" : g.mode.po === "wc" ? "World Cup knockouts" : "Champions League"}</h1>
+        <p class="muted">${po.kind === "ucl" ? esc(g.season.leagueName) + ": " + recordStr(g.sport, g.season) + ", " + ordinal(g.season.rank) + (g.season.rank === 1 ? " (champions)" : "") : "Regular season: " + recordStr(g.sport, g.season)}${g.season.w === g.mode.games ? " (perfect)" : ""}</p></div>
         <div class="row">${over ? "" : `<button class="btn ghost small" id="poAll">Reveal all</button>`}<button class="btn ${over ? "big" : ""}" id="poNext">${over ? "See results" : v.poRound === 0 ? "Start" : "Next round"}</button></div></div>
-      <div class="rounds">${shown.map(r => `<div class="panel round"><h3>${esc(r.name)}</h3><div class="series-grid">${r.series.map(s => seriesHtml(s, r.type)).join("")}</div></div>`).join("") || `<div class="panel empty">${g.sport === "bb" ? "The bracket is set." : "The draw is made."} Press start.</div>`}</div>`;
+      <div class="rounds">${shown.map(roundHtml).join("") || `<div class="panel empty">${g.sport === "bb" ? "The bracket is set." : "The draw is made."} Press start.</div>`}</div>`;
     app.onclick = (e) => {
       const b = e.target.closest("button"); if (!b) return;
       if (b.id === "poNext") { if (over) return finishRun(); v.poRound++; renderPlayoffs(); const r = $$(".round"); r.length && r[r.length - 1].scrollIntoView({ block: "nearest", behavior: reduceMotion ? "auto" : "smooth" }); }
@@ -562,7 +586,8 @@
     if (!g.saved) {
       g.saved = true; g.revealed = true;
       const s = g.season, perfect = s.w === g.mode.games, won = !!(g.playoffs && g.playoffs.won);
-      const run = { t: Date.now(), sport: g.sport, mode: g.mode.id, modeName: g.mode.name, kind: g.mode.kind, diff: g.diff, style: g.style, rec: recordStr(g.sport, s), w: s.w, l: s.l, d: s.d || 0, games: g.mode.games, perfect, won, grade: E.grade(g), ovr: g.team.ovr, hidden: !g.showRatings, daily: !!S.daily, src: g.mode.src || "", team: g.teamName, players: g.roster.map(r => r.inst.p.name) };
+      const run = { t: Date.now(), sport: g.sport, mode: g.mode.id, modeName: g.mode.name, kind: g.mode.kind, diff: g.diff, style: g.style, rec: recordStr(g.sport, s), w: s.w, l: s.l, d: s.d || 0, games: g.mode.games, perfect, won, grade: E.grade(g), ovr: g.team.ovr, hidden: !g.showRatings, daily: !!S.daily, src: g.mode.src || "", team: g.teamName, players: g.roster.map(r => r.inst.p.name),
+        league: !!(g.playoffs && g.playoffs.leagueWon), ucl: !!(g.playoffs && g.playoffs.uclWon), young: g.roster.filter(x => x.inst && x.inst.young).length };
       g.run = run;
       const hist = store.get("history", []); hist.unshift(run); store.set("history", hist.slice(0, 300));
       if (S.daily) { const d = store.get("daily", {}); d[S.daily.key] = { rec: run.rec, won, grade: run.grade }; store.set("daily", d); }
@@ -579,7 +604,14 @@
   function renderResults() {
     const g = S.game; if (!g.saved) return finishRun();
     const s = g.season, po = g.playoffs, run = g.run, st = g.stats;
-    const title = po.won ? (g.mode.po === "nba" ? "NBA Champions" : g.mode.po === "euro" ? "EuroLeague Champions" : g.mode.po === "wc" ? "World Champions" : "Champions of Europe") : po.missed ? "Missed the playoffs" : "Out in the " + (po.exitRound || "playoffs");
+    let title;
+    if (po.kind === "league" || po.kind === "ucl") {
+      const lg = g.season.leagueName;
+      if (po.leagueWon && po.uclWon) title = "The Double: " + lg + " and Champions League";
+      else if (po.uclWon) title = "Champions of Europe (" + ordinal(g.season.rank) + " in " + lg + ")";
+      else if (po.leagueWon) title = lg + " champions" + (po.kind === "ucl" ? ", out in the " + (po.exitRound || "Champions League") : "");
+      else title = ordinal(g.season.rank) + " in " + lg + (po.kind === "ucl" ? ", out in the " + (po.exitRound || "Champions League") : "");
+    } else title = po.won ? (g.mode.po === "nba" ? "NBA Champions" : g.mode.po === "euro" ? "EuroLeague Champions" : "World Champions") : po.missed ? "Missed the playoffs" : "Out in the " + (po.exitRound || "playoffs");
     const fb = g.sport === "fb";
     app.innerHTML = `
       <div class="panel result-hero">
@@ -590,8 +622,8 @@
       </div>
       <div class="two" style="margin-top:18px">
         <div class="panel"><h3 style="margin-bottom:12px">Your roster</h3><div class="roster-list">
-          ${st.list.map(x => { const f = E.fit(x.inst.p, x.slot.pos); return `<div class="rl ${x === st.mvp ? "mvp" : ""}"><span class="p">${x.slot.pos === "BN" ? "BN" : x.slot.pos}</span>
-            <div><b>${esc(x.inst.p.name)}</b>${x === st.mvp ? ` <span class="tag hot">MVP</span>` : ""}${x.inst.rookie ? ` <span class="tag rookie">Rookie</span>` : ""}<br><span class="muted small">${esc(instMeta(g, x.inst))}${f < 1 ? ` · ${Math.round(f * 100)}% fit` : ""}<br>${esc(x.line)}</span></div>
+          ${st.list.map(x => { const f = E.fit(x.inst, x.slot.pos); return `<div class="rl ${x === st.mvp ? "mvp" : ""}"><span class="p">${x.slot.pos === "BN" ? "BN" : x.slot.pos}</span>
+            <div><b>${esc(x.inst.p.name)}</b>${x === st.mvp ? ` <span class="tag hot">MVP</span>` : ""}${x.inst.young ? " " + youngTag(x.inst) : ""}<br><span class="muted small">${esc(instMeta(g, x.inst))}${f < 1 ? ` · ${Math.round(f * 100)}% fit` : ""}<br>${esc(x.line)}</span></div>
             <span class="r">${x.inst.r}</span></div>`; }).join("")}</div></div>
         <div style="display:grid;gap:18px">
           <div class="panel"><h3 style="margin-bottom:12px">Season numbers</h3><div class="kv">
@@ -634,11 +666,12 @@
     { id: "world", name: "On Top of the World", desc: "Win a World Cup knockout bracket.", test: (r) => r.won && r.kind === "wc" },
     { id: "daily", name: "Daily Grind", desc: "Finish a daily challenge.", test: (r) => r.daily },
     { id: "grind", name: "Lifer", desc: "Play 25 seasons.", test: (r, h) => h.length >= 25 },
-    { id: "rookies", name: "Kids These Days", desc: "Win a title with three or more rookies drafted.", test: (r) => false },
+    { id: "rookies", name: "Kids These Days", desc: "Win a title with three or more rookies or wonderkids.", test: (r) => r.won && r.young >= 3 },
+    { id: "double", name: "The Double", desc: "Win your league and the Champions League in one season.", test: (r) => r.league && r.ucl },
     { id: "s_plus", name: "S+", desc: "Earn the top grade.", test: (r) => r.grade === "S+" }
   ];
   // rookies achievement needs roster info: patch test at finish time
-  ACH.find(a => a.id === "rookies").test = (r) => r.won && S.game && S.game.roster.filter(x => x.inst && x.inst.rookie).length >= 3;
+
 
   // ---------- RECORDS ----------
   function renderRecords() {
@@ -676,17 +709,25 @@
 
   // ---------- DATABASE ----------
   const dbState = { q: "", src: "n" };
+  const FB_POS_NAMES = { GK: "Goalkeeper", CB: "Centre-back", FB: "Full-back", DM: "Defensive mid", CM: "Central mid", AM: "Attacking mid", WM: "Wide mid", W: "Winger", ST: "Striker" };
+  function dbTeam(p, t, y) { return p.src === "n" ? E.nbaTeamName(t, y) : p.src === "e" ? (window.EURO_TEAMS[t] || t) : t; }
   function renderDatabase() {
     const srcName = { n: "NBA", e: "EuroLeague", f: "Football" };
-    const list = E.DB.all.filter(p => p.src === dbState.src && (!dbState.q || p.name.toLowerCase().includes(dbState.q.toLowerCase()))).sort((a, b) => b.peak - a.peak);
-    const teamName = (p, code) => p.src === "n" ? E.nbaTeamName(code, 2000) : p.src === "e" ? window.EURO_TEAMS[code] : (window.FB_CLUBS[code] || code);
+    const q = E.norm(dbState.q);
+    const all = E.DB.all.filter(p => (dbState.src === "f" ? p.sport === "fb" : p.src === dbState.src) && (!q || p.key.includes(q)));
+    const list = all.map(p => ({ p, pk: E.peakOf(p) })).sort((a, b) => b.pk - a.pk).slice(0, 80);
+    const posOf = (p) => { const c = {}; p.seasons.concat(p.wc).forEach(s => (s.pos || []).forEach(x => c[x] = (c[x] || 0) + 1)); const top = Object.keys(c).sort((a, b) => c[b] - c[a])[0] || ""; return p.sport === "fb" ? (FB_POS_NAMES[top] || top) : top; };
+    const counts = { n: E.DB.nba.length, e: E.DB.euro.length, f: E.DB.fb.length };
     app.innerHTML = `
-      <div class="section-head"><div><h1>Players</h1><p class="muted">${E.DB.nba.length} NBA, ${E.DB.euro.length} EuroLeague and ${E.DB.fb.length} football players. Ratings are peak ratings; each season in the game uses a rating for that year.</p></div></div>
+      <div class="section-head"><div><h1>Players</h1><p class="muted">${counts.n.toLocaleString()} NBA, ${counts.e} EuroLeague and ${counts.f.toLocaleString()} football players. NBA ratings come from real season stats (PER, BPM, Win Shares) plus awards; football ratings since 2012 from market value and goals; older legends are hand-rated.</p></div></div>
       <div class="panel"><div class="row" style="margin-bottom:14px"><input class="field" id="dbq" placeholder="Search by name" value="${esc(dbState.q)}" style="flex:1;min-width:200px">
         <div class="tabs" style="margin:0">${Object.entries(srcName).map(([k, n]) => `<button data-src="${k}" class="${dbState.src === k ? "on" : ""}">${n}</button>`).join("")}</div></div>
-        <p class="muted small" style="margin-bottom:10px">${list.length} players${list.length > 80 ? ", showing the top 80" : ""}</p>
-        <div class="db-list">${list.slice(0, 80).map(p => `<details class="db-item"><summary><span><b>${esc(p.name)}</b> <span class="muted small">${posLabel(p)}${p.nat ? " · " + esc(window.FB_NATIONS[p.nat] || p.nat) : ""}</span></span><span class="pk">${p.peak}</span></summary>
-          <div class="body"><span>Peak around ${E.seasonStr(p.pk)}</span>${p.stints.length ? `<span>${p.stints.map(s => esc(teamName(p, s.t)) + " " + s.a + (s.b !== s.a ? "-" + s.b : "")).join(", ")}</span>` : ""}${p.wc.length ? `<span>World Cups: ${p.wc.join(", ")}</span>` : ""}</div></details>`).join("") || `<p class="empty">No players found. Try another spelling.</p>`}</div></div>`;
+        <p class="muted small" style="margin-bottom:10px">${all.length.toLocaleString()} players${all.length > 80 ? ", showing the best 80" : ""}</p>
+        <div class="db-list">${list.map(({ p, pk }) => {
+          const best = p.seasons.concat(p.wc).reduce((a, b) => (!a || b.r > a.r) ? b : a, null);
+          const career = E.careerOf(p).map(c => esc(dbTeam(p, c.t, c.b)) + " " + c.a + (c.b !== c.a ? "-" + String(c.b + 1).slice(2) : "-" + String(c.a + 1).slice(2))).join(", ");
+          return `<details class="db-item"><summary><span><b>${esc(p.name)}</b> <span class="muted small">${esc(posOf(p))}${p.nat ? " · " + esc(window.FB_NATIONS[p.nat] || p.nat) : ""}</span></span><span class="pk">${pk}</span></summary>
+          <div class="body">${best ? `<span>Best season: ${esc(E.seasonStr(best.y))}${best.t ? " with " + esc(dbTeam(p, best.t, best.y)) : best.nat ? " World Cup with " + esc(best.nat) : ""} (${best.r})</span>` : ""}${career ? `<span>${career}</span>` : ""}${p.wc.length ? `<span>World Cups: ${p.wc.map(w => w.y).join(", ")}</span>` : ""}</div></details>`; }).join("") || `<p class="empty">No players found. Try another spelling.</p>`}</div></div>`;
     $("#dbq").oninput = (e) => { dbState.q = e.target.value; const pos = e.target.selectionStart; renderDatabase(); const n = $("#dbq"); n.focus(); n.setSelectionRange(pos, pos); };
     app.onclick = (e) => { const b = e.target.closest("[data-src]"); if (b) { dbState.src = b.dataset.src; renderDatabase(); } };
   }
@@ -756,7 +797,9 @@
     const k = e.key.toLowerCase();
     const click = (sel) => { const el = $(sel); if (el && !el.disabled) { e.preventDefault(); el.click(); return true; } return false; };
     if (k === " ") { click("#spin") || click("#deal") || click("#playSeason"); return; }
-    if (/^[1-5]$/.test(k)) { const c = $$("#action .cand:not([disabled]), #action .pcard")[+k - 1]; if (c) { e.preventDefault(); c.click(); } return; }
+    if (k === "y") { click("#swapYear"); return; }
+    if (k === "g") { click("#swapTeam") || click("#redraw"); return; }
+    if (/^[1-9]$/.test(k)) { const c = $$("#action .cand:not([disabled]), #action .pcard")[+k - 1]; if (c) { e.preventDefault(); c.click(); } return; }
     const pi = "qwert".indexOf(k);
     if (pi >= 0) { const p = $$("#action .place button")[pi]; if (p) { e.preventDefault(); p.click(); } }
   });
