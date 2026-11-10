@@ -100,7 +100,14 @@
     DB.nba = [];
     G.NBA_GEN.trim().split("\n").forEach((line, i) => {
       const bar = line.lastIndexOf("|"); const name = line.slice(0, bar);
-      const seasons = line.slice(bar + 1).split(",").map(e => { const m = e.match(/^([A-Z]+)(\d{3})(\d{2})(\d)$/); return m ? { t: m[1], y: 1900 + +m[2], r: +m[3], pos: [NBA_ORDER[+m[4]]], lg: "" } : null; }).filter(Boolean);
+      const seasons = line.slice(bar + 1).split(";").map(e => {
+        const f = e.split("."); if (f.length < 4) return null;
+        const n = (x) => x === "" || x == null ? null : +x;
+        const K = ["g", "mp", "fg", "fga", "p3", "p3a", "ft", "fta", "orb", "trb", "ast", "stl", "blk", "tov", "pts"];
+        let st = null;
+        if (f.length >= 19) { st = {}; K.forEach((k, j) => st[k] = n(f[4 + j])); st.gk = {}; K.forEach(k => { if (st[k] != null) st.gk[k] = st.g; }); }
+        return { t: f[0], y: 1900 + +f[1], r: +f[2], pos: [NBA_ORDER[+f[3]]], lg: "", st };
+      }).filter(Boolean);
       if (!seasons.length) return;
       const first = Math.min(...seasons.map(s => s.y));
       DB.nba.push({ id: "n" + i, src: "n", sport: "bb", name, key: norm(name), seasons, wc: [], first, young: (y) => y === first && y > 1960 });
@@ -121,8 +128,19 @@
       const by = +f[3] || 0, nat = G.FBG_NATS[+f[2]] || "";
       const p = { id: "g" + i, src: "g", sport: "fb", name: f[0], key: norm(f[0]), nat, by, seasons: [], wc: [] };
       const pos = [f[1]];
-      if (f[4]) f[4].split(",").forEach(e => { const [cid, yy, rr] = e.split("."); const y = 2000 + +yy; p.seasons.push({ t: (G.FBG_CLUBS[cid] || [cid])[0], cid, y, r: +rr, pos, lg: leagueAt(cid, y) }); });
-      if (f[5]) { const [ni, rr] = f[5].split("."); p.wc.push({ y: 2026, nat: G.FBG_NATS[+ni] || nat, r: +rr, pos }); }
+      if (f[4]) f[4].split(",").forEach(e => {
+        const x = e.split("."), y = 2000 + +x[1];
+        const st = x.length >= 10 ? { apps: +x[3], g: +x[4], a: +x[5], min: +x[6], yc: +x[7], rc: +x[8], cs: +x[9], pen: x.length > 10 ? +x[10] : null } : null;
+        if (st && x.length >= 19) {
+          const n = (v) => v === "" || v == null ? null : +v;
+          st.d = { xg: n(x[11]) == null ? null : n(x[11]) / 10, sh: n(x[12]), sot: n(x[13]), drb: n(x[14]), kp: n(x[15]), tkl: n(x[16]), int: n(x[17]), aer: n(x[18]), apps: st.apps, min: st.min };
+        }
+        p.seasons.push({ t: (G.FBG_CLUBS[x[0]] || [x[0]])[0], cid: x[0], y, r: +x[2], pos, lg: leagueAt(x[0], y), st });
+      });
+      // a season with no stats yet (2026-27) shows last season's numbers
+      // newest seasons have no detailed numbers yet: point at the latest season that has them
+      p.seasons.forEach(se => { if (!se.st) { const prev = p.seasons.filter(o => o.st && o.y < se.y).sort((a, b) => b.y - a.y)[0]; if (prev) { se.st = prev.st; se.stPrev = prev.y; } } });
+      if (f[5]) { const x = f[5].split("."); p.wc.push({ y: 2026, nat: G.FBG_NATS[+x[0]] || nat, r: +x[1], pos, st: x.length >= 6 ? { apps: +x[2], g: +x[3], a: +x[4], min: +x[5], pen: x.length > 6 ? +x[6] : null, wc: true } : null }); }
       p.first = p.seasons.length ? Math.min(...p.seasons.map(s => s.y)) : 2026;
       p.young = (y) => by && (y + 1 - by) <= 20;
       DB.fb.push(p);
@@ -133,6 +151,17 @@
     DB.ready = true;
     return DB;
   }
+  // Same club, new name (same city): grouped together for decade/franchise spins
+  const NBA_ALIAS = { WSB: "WAS", CAP: "WAS", CHA: "CHO", NOH: "NOP", NOK: "NOP", KCO: "KCK", NYN: "NJN", CHP: "CHZ" };
+  let aliasDone = false;
+  function mergeAliasNames() {
+    if (aliasDone || !G.NBA_TEAMNAMES) return; aliasDone = true;
+    Object.entries(NBA_ALIAS).forEach(([from, to]) => {
+      const a = G.NBA_TEAMNAMES[from] || [], b = G.NBA_TEAMNAMES[to] || [];
+      G.NBA_TEAMNAMES[to] = a.concat(b).sort((x, y) => x[0] - y[0]);
+    });
+  }
+  const canonTeam = (i) => i.p.sport === "bb" && !i.lg ? (NBA_ALIAS[i.team] || i.team) : i.team;
   function nbaTeamName(code, y) {
     const seq = G.NBA_TEAMNAMES[code]; if (!seq) return code;
     let n = seq[0][1]; seq.forEach(([yy, nm]) => { if (y >= yy) n = nm; }); return n;
@@ -186,7 +215,7 @@
   // ---------- Pools ----------
   const poolCache = {};
   function makeInst(p, s, team, y, lg) {
-    return { p, team, y, r: s.r, pos: s.pos, young: !!p.young(y), lg: lg || s.lg || "", key: team + "|" + y };
+    return { p, team, y, r: s.r, pos: s.pos, young: !!p.young(y), lg: lg || s.lg || "", key: team + "|" + y, st: s.st || null, stPrev: s.stPrev || null };
   }
   function getPool(mode) {
     if (poolCache[mode.id]) return poolCache[mode.id];
@@ -209,6 +238,29 @@
     const pct = (q) => sorted[clamp(Math.floor(q * (sorted.length - 1)), 0, sorted.length - 1)];
     const groups = {}; uniq.forEach(i => (groups[i.key] = groups[i.key] || []).push(i));
     return (poolCache[mode.id] = { mode, inst: uniq, sorted, pct, groups });
+  }
+  // Decades a version covers, and a pool limited to some of them (2 or more)
+  function decadesOf(mode) {
+    if (mode.single) return [];
+    const pool = getPool(mode);
+    if (!pool.decades) pool.decades = [...new Set(pool.inst.map(i => Math.floor(i.y / 10) * 10))].sort((a, b) => a - b);
+    return pool.decades;
+  }
+  function cleanDecades(mode, list) {
+    const all = decadesOf(mode);
+    if (!list || !Array.isArray(list) || all.length < 3) return null;
+    const pick = all.filter(d => list.includes(d));
+    return pick.length >= 2 && pick.length < all.length ? pick : null;
+  }
+  function poolFor(mode, decades) {
+    const base = getPool(mode); if (!decades) return base;
+    const ck = mode.id + "|" + decades.join(",");
+    if (poolCache[ck]) return poolCache[ck];
+    const inst = base.inst.filter(i => decades.includes(Math.floor(i.y / 10) * 10));
+    const sorted = inst.map(i => i.r).sort((a, b) => a - b);
+    const pct = (q) => sorted[clamp(Math.floor(q * (sorted.length - 1)), 0, sorted.length - 1)];
+    const groups = {}; inst.forEach(i => (groups[i.key] = groups[i.key] || []).push(i));
+    return (poolCache[ck] = { mode, inst, sorted, pct, groups });
   }
 
   // ---------- Difficulty ----------
@@ -237,13 +289,20 @@
       if (opt.bench) for (let i = 1; i <= 3; i++) s.push({ pos: "BN", starter: false });
       return s;
     }
-    const [d, m, a] = opt.formation.split("-").map(Number);
-    const s = [{ pos: "GK", starter: true }];
-    for (let i = 0; i < d; i++) s.push({ pos: "DEF", starter: true });
-    for (let i = 0; i < m; i++) s.push({ pos: "MID", starter: true });
-    for (let i = 0; i < a; i++) s.push({ pos: "ATT", starter: true });
+    // "2-2-1" = DEF-MID-ATT; four numbers ("4-2-3-1") = DEF, MID, attacking MID line, ATT
+    const nums = (opt.formation || "2-2-1").split("-").map(Number);
+    const lines = nums.length === 4 ? ["DEF", "MID", "MID", "ATT"] : ["DEF", "MID", "ATT"];
+    const s = [{ pos: "GK", starter: true, row: 0 }];
+    nums.forEach((n, li) => { for (let i = 0; i < n; i++) s.push({ pos: lines[li], starter: true, row: li + 1 }); });
     return s;
   }
+  // Football team sizes and their formations (outfield players only; the keeper is always there)
+  const FB_SIZES = {
+    4: ["1-1-1", "2-0-1", "1-0-2", "0-2-1", "2-1-0", "1-2-0"],
+    6: ["2-2-1", "2-1-2", "1-2-2", "3-1-1", "1-3-1", "1-1-3"],
+    8: ["3-3-1", "3-2-2", "2-3-2", "3-1-3", "2-4-1", "4-2-1", "3-2-1-1", "2-3-1-1"],
+    11: ["4-3-3", "4-4-2", "4-2-3-1", "3-5-2", "3-4-3", "5-3-2", "4-1-4-1", "4-4-1-1", "3-4-2-1", "5-4-1"]
+  };
   const openSlots = (roster) => roster.filter(r => !r.inst);
   const placeable = (inst, roster) => openSlots(roster).some(r => fit(inst, r.slot.pos) > 0);
 
@@ -252,7 +311,8 @@
     let c = 0;
     for (let i = 0; i < insts.length; i++) for (let j = i + 1; j < insts.length; j++) {
       const a = insts[i], b = insts[j];
-      if (a.team === b.team && Math.abs(a.y - b.y) <= 2) c += 0.35;
+      const a0 = a.y0 != null ? a.y0 : a.y, a1 = a.y1 != null ? a.y1 : a.y, b0 = b.y0 != null ? b.y0 : b.y, b1 = b.y1 != null ? b.y1 : b.y;
+      if (a.team === b.team && a0 - 2 <= b1 && b0 - 2 <= a1) c += 0.35;
     }
     return Math.min(1.6, c);
   }
@@ -284,14 +344,53 @@
 
   // ---------- Draft: groups, spins, swaps, cards ----------
   const weightOf = (D) => (i) => i.young ? D.youngW : 1;
+  // Combine a player's seasons with one team (in one decade, or ever) into a single card.
+  function combineStats(list) {
+    const withSt = list.filter(i => i.st && !i.stPrev);
+    if (!withSt.length) return null;
+    if (list[0].p.sport === "bb") {
+      const out = { gk: {}, seasons: withSt.length };
+      ["g", "mp", "fg", "fga", "p3", "p3a", "ft", "fta", "orb", "trb", "ast", "stl", "blk", "tov", "pts"].forEach(k => {
+        const v = withSt.filter(i => i.st[k] != null);
+        out[k] = v.length ? v.reduce((a, i) => a + i.st[k], 0) : null;
+        if (v.length) out.gk[k] = v.reduce((a, i) => a + i.st.g, 0);
+      });
+      return out;
+    }
+    const sum = (k) => withSt.reduce((a, i) => a + (i.st[k] || 0), 0);
+    const out = { apps: sum("apps"), g: sum("g"), pen: withSt.some(i => i.st.pen != null) ? sum("pen") : null, a: sum("a"), min: sum("min"), yc: sum("yc"), rc: sum("rc"), cs: sum("cs"), seasons: withSt.length, wc: !!withSt[0].st.wc };
+    const wd = withSt.filter(i => i.st.d);
+    if (wd.length) {
+      out.d = { ka: {}, kn: {} };
+      ["xg", "sh", "sot", "drb", "kp", "tkl", "int", "aer"].forEach(k => { const v = wd.filter(i => i.st.d[k] != null); out.d[k] = v.length ? v.reduce((a, i) => a + i.st.d[k], 0) : null; out.d.ka[k] = v.reduce((a, i) => a + i.st.d.apps, 0); out.d.kn[k] = v.length; });
+    }
+    return out;
+  }
+  function combine(list, keyFn, labelY) {
+    const by = {};
+    list.forEach(i => { const k = keyFn(i) + "@" + i.p.key; (by[k] = by[k] || []).push(i); });
+    return Object.entries(by).map(([k, arr]) => {
+      arr.sort((a, b) => a.y - b.y);
+      const best = arr.reduce((a, b) => b.r > a.r ? b : a, arr[0]);
+      const mean = arr.reduce((a, i) => a + i.r, 0) / arr.length;
+      const r = arr.length === 1 ? best.r : Math.round(best.r * 0.6 + mean * 0.4);
+      const posCount = {}; arr.forEach(i => i.pos.forEach(x => posCount[x] = (posCount[x] || 0) + 1));
+      const pos = [Object.keys(posCount).sort((a, b) => posCount[b] - posCount[a])[0]];
+      return { p: best.p, team: k.split("@")[0].split("|")[0], y: best.y, r, pos, young: arr.every(i => i.young), lg: best.lg, key: k.split("@")[0], st: combineStats(arr), combined: true,
+        y0: arr[0].y, y1: arr[arr.length - 1].y, n: arr.length, seasonList: arr.map(i => i.y) };
+    });
+  }
+  const decadeOf = (y) => Math.floor(y / 10) * 10;
   function buildGroups(g) {
     const groups = {};
-    if (g.groupBy === "franchise") {
-      const best = {};
-      g.fpool.forEach(i => { const k = i.team + "@" + i.p.key; if (!best[k] || best[k].r < i.r) best[k] = i; });
-      Object.values(best).forEach(i => (groups[i.team] = groups[i.team] || []).push(i));
-    } else g.fpool.forEach(i => (groups[i.key] = groups[i.key] || []).push(i));
+    g.fpool.forEach(i => (groups[i.key] = groups[i.key] || []).push(i));
     return groups;
+  }
+  function groupedPool(g, insts) {
+    mergeAliasNames();
+    if (g.groupBy === "decade") return combine(insts, i => canonTeam(i) + "|" + decadeOf(i.y));
+    if (g.groupBy === "franchise") return combine(insts, i => canonTeam(i));
+    return insts;
   }
   function usedKeys(g) { return new Set(g.roster.filter(r => r.inst).map(r => r.inst.p.key)); }
   function groupCands(g, key) {
@@ -300,11 +399,104 @@
   }
   function labelFor(g, key) {
     if (g.groupBy === "franchise") {
-      const ys = g.fgroups[key].map(i => i.y), lo = Math.min(...ys), hi = Math.max(...ys);
-      return { title: teamName(g.mode, key, hi), sub: g.mode.kind === "wc" ? "All World Cups" : (lo === hi ? seasonStr(lo) : "Any season, " + lo + " to " + hi) };
+      const ys = (g.fgroups[key] || []).flatMap(i => [i.y0, i.y1]), lo = Math.min(...ys), hi = Math.max(...ys);
+      return { title: teamName(g.mode, key, hi), sub: g.mode.kind === "wc" ? "All World Cups" : (lo === hi ? seasonStr(lo) : "Whole franchise, " + lo + " to " + (hi + 1)) };
     }
     const [team, y] = key.split("|");
+    if (g.groupBy === "decade") {
+      const ys = (g.fgroups[key] || []).map(i => i.y1);
+      return { title: teamName(g.mode, team, ys.length ? Math.max(...ys) : +y + 9), sub: g.mode.kind === "wc" ? "World Cups of the " + y + "s" : "The " + y + "s" };
+    }
     return { title: teamName(g.mode, team, +y), sub: g.mode.kind === "wc" ? "World Cup " + y : seasonStr(+y) };
+  }
+  function spanText(g, i) {
+    if (!i.combined) return g.mode.kind === "wc" ? "World Cup " + i.y : seasonStr(i.y);
+    if (g.mode.kind === "wc") return i.n === 1 ? "World Cup " + i.y : i.n + " World Cups (" + i.seasonList.join(", ") + ")";
+    return i.n === 1 ? seasonStr(i.y) : i.y0 + "-" + String(i.y1 + 1).slice(2) + " · " + i.n + " seasons";
+  }
+  // Main stat chips for a player card: [[label, value], ...]
+  const pgOf = (st, k) => st[k] == null ? null : st[k] / Math.max(1, (st.gk && st.gk[k]) || st.g);
+  const gWord = (st) => st.pen ? st.g + "(p" + st.pen + ")" : String(st.g);
+  function statChips(i) {
+    const st = i.st; if (!st) return [];
+    if (i.p.sport === "bb") return [["PTS", pgOf(st, "pts")], ["REB", pgOf(st, "trb")], ["AST", pgOf(st, "ast")]].filter(x => x[1] != null).map(([k, v]) => [k, v.toFixed(1)]);
+    if (i.pos[0] === "GK") return [["APPS", st.apps]].concat(st.wc ? [] : [["CLEAN SHEETS", st.cs]]);
+    return [["GOALS", gWord(st)], ["ASSISTS", st.a]];
+  }
+  const POS_GROUP = { GK: "GK", CB: "DEF", FB: "DEF", DM: "MID", CM: "MID", AM: "MID", WM: "MID", W: "ATT", ST: "ATT" };
+  // Full numbers behind the arrow: rows of [label, per game, total] plus one-value rows
+  function statDetail(i) {
+    const st = i.st; if (!st) return null;
+    const f1 = (v) => v == null ? "–" : v.toFixed(1), f2 = (v) => v == null ? "–" : v.toFixed(2), pc = (m, a) => m == null || !a ? "–" : (100 * m / a).toFixed(1) + "%";
+    const many = st.seasons > 1;
+    if (i.p.sport === "bb") {
+      const pg = (k) => f1(pgOf(st, k)), tot = (k) => st[k] == null ? "–" : Math.round(st[k]).toLocaleString("en-US");
+      const ma = (m, a) => st[m] == null ? null : [f1(pgOf(st, m)) + "-" + f1(pgOf(st, a)), Math.round(st[m]).toLocaleString("en-US") + "-" + Math.round(st[a]).toLocaleString("en-US")];
+      const p2m = st.fg != null && st.p3 != null ? st.fg - st.p3 : st.fg, p2a = st.fga != null && st.p3a != null ? st.fga - st.p3a : st.fga;
+      const rows = [["Games", "", String(st.g)], ["Minutes", pg("mp"), tot("mp")], ["Points", pg("pts"), tot("pts")], ["Rebounds", pg("trb"), tot("trb")]];
+      if (st.orb != null) rows.push(["Off. rebounds", pg("orb"), tot("orb")], ["Def. rebounds", f1((st.trb - st.orb) / Math.max(1, st.gk.orb)), Math.round(st.trb - st.orb).toLocaleString("en-US")]);
+      rows.push(["Assists", pg("ast"), tot("ast")]);
+      if (st.stl != null) rows.push(["Steals", pg("stl"), tot("stl")]);
+      if (st.blk != null) rows.push(["Blocks", pg("blk"), tot("blk")]);
+      if (st.tov != null) rows.push(["Turnovers", pg("tov"), tot("tov")]);
+      const fgr = ma("fg", "fga"); if (fgr) rows.push(["FG made-att", fgr[0], fgr[1]]);
+      if (st.p3a) { const r = ma("p3", "p3a"); rows.push(["3P made-att", r[0], r[1]]); }
+      if (p2a != null) rows.push(["2P made-att", f1(p2m / st.g) + "-" + f1(p2a / st.g), Math.round(p2m).toLocaleString("en-US") + "-" + Math.round(p2a).toLocaleString("en-US")]);
+      if (st.fta != null) { const r = ma("ft", "fta"); rows.push(["FT made-att", r[0], r[1]]); }
+      const one = [["FG%", pc(st.fg, st.fga)]];
+      if (st.p3a) one.push(["3P%", pc(st.p3, st.p3a)]);
+      if (p2a) one.push(["2P%", pc(p2m, p2a)]);
+      if (st.fta) one.push(["FT%", pc(st.ft, st.fta)]);
+      if (st.fga) { one.push(["eFG%", pc(st.fg + 0.5 * (st.p3 || 0), st.fga)]); if (st.fta != null) one.push(["TS%", (100 * st.pts / (2 * (st.fga + 0.44 * st.fta))).toFixed(1) + "%"]); }
+      return { cols: ["Per game", many ? "Total (" + st.seasons + " seasons)" : "Season total"], rows, one, note: "" };
+    }
+    const grp = POS_GROUP[i.pos[0]] || "MID", apps = Math.max(1, st.apps), per = (v, n) => v == null ? "–" : (v / Math.max(1, n)).toFixed(2);
+    const rows = [["Apps", "", String(st.apps)], ["Minutes", Math.round(st.min / apps).toString(), st.min.toLocaleString("en-US")]];
+    if (grp === "GK") rows.push(["Clean sheets", st.wc ? "–" : per(st.cs, apps), st.wc ? "–" : String(st.cs)]);
+    if (grp !== "GK") {
+      rows.push(["Goals", per(st.g, apps), gWord(st)]);
+      if (st.pen != null) rows.push(["Penalty goals", per(st.pen, apps), String(st.pen)]);
+      rows.push(["Assists", per(st.a, apps), String(st.a)]);
+    }
+    if (grp === "DEF" && !st.wc) rows.push(["Clean sheets", per(st.cs, apps), String(st.cs)]);
+    const notes = [];
+    if (grp !== "GK" && !st.wc) {
+      const want = [];
+      if (grp === "ATT" || grp === "MID") want.push(["xG", "xg"], ["Successful dribbles", "drb"], ["Chances created", "kp"]);
+      if (grp === "ATT") want.push(["Shots on target", "sot"], ["Shots", "sh"]);
+      if (grp === "DEF" || grp === "MID") want.push(["Tackles won", "tkl"], ["Interceptions", "int"], ["Aerial duels won", "aer"]);
+      const fmtT = (k, v) => k === "xg" ? v.toFixed(1) : String(v), fmtP = (k, v, n) => (v / Math.max(1, n)).toFixed(2);
+      const older = {}, partial = [];
+      want.forEach(([lab, k]) => {
+        const d = st.d;
+        if (d && d[k] != null) {
+          const n = d.ka ? d.ka[k] : d.apps;
+          rows.push([lab, fmtP(k, d[k], n), fmtT(k, d[k])]);
+          if (d.kn && d.kn[k] < st.seasons) partial.push(lab);
+          return;
+        }
+        if (i.combined) return;
+        // newest season (up to 3 back) that has this number
+        const back = i.p.seasons.filter(o => o.st && o.st.d && o.st.d[k] != null && o.y < i.y && o.y >= i.y - 3).sort((a, b) => b.y - a.y)[0];
+        if (back) { rows.push([lab + "*", fmtP(k, back.st.d[k], back.st.d.apps), fmtT(k, back.st.d[k])]); (older[seasonStr(back.y)] = older[seasonStr(back.y)] || []).push(lab); }
+      });
+      Object.entries(older).forEach(([y, labs]) => notes.push("* " + labs.join(", ") + ": " + y + ", the newest season with this number."));
+      if (partial.length) notes.push(partial.join(", ") + " are only counted from 2017-18 on, so they cover fewer seasons.");
+      if (!rows.some(r => ["xG", "Tackles won", "xG*", "Tackles won*"].includes(r[0]))) notes.push("xG, dribbles, chances created and defending numbers exist for the big five leagues from 2017-18.");
+    }
+    const note = notes.join(" ");
+    if (!st.wc) rows.push(["Yellow cards", "", String(st.yc)], ["Red cards", "", String(st.rc)]);
+    const p90 = (v) => st.min >= 90 ? (v * 90 / st.min).toFixed(2) : "–";
+    const one = grp === "GK" ? [["Minutes per game", Math.round(st.min / apps)]] : [["Goals per 90", p90(st.g)], ["Assists per 90", p90(st.a)], ["G+A per 90", p90(st.g + st.a)]];
+    if (st.pen != null && grp !== "GK") one.push(["Non-penalty goals per 90", p90(st.g - st.pen)]);
+    return { cols: ["Per game", st.wc ? "World Cup total" : many ? "Total (" + st.seasons + " seasons)" : "Season total"], rows, one, note };
+  }
+  function statNote(i) {
+    if (!i.st) return "";
+    if (i.stPrev) return "Stats from " + seasonStr(i.stPrev);
+    if (i.p.sport === "bb") return i.st.seasons > 1 ? "Per game, " + i.st.g + " games" : "Per game";
+    if (i.st.wc) return "World Cup 2026";
+    return i.st.seasons > 1 ? "League, " + i.st.seasons + " seasons" : "League season";
   }
   function finishSpin(g, key) {
     const D = DIFFS[g.diff];
@@ -365,15 +557,17 @@
   // ---------- New game ----------
   function newGame(opt) {
     initDB();
-    const mode = Engine.modes[opt.modeId], pool = getPool(mode);
+    const mode = Engine.modes[opt.modeId], decades = cleanDecades(mode, opt.decades), pool = poolFor(mode, decades);
     const g = {
       mode, diff: opt.diff, style: opt.style, opt, sport: mode.sport, showRatings: opt.style === "salary" ? true : opt.showRatings !== false,
-      groupBy: opt.groupBy === "franchise" && !mode.single ? "franchise" : "season",
-      simLevel: +opt.simLevel || 3, roster: makeSlots(mode.sport, opt).map(slot => ({ slot, inst: null })), pool
+      groupBy: mode.single ? "season" : (["franchise", "decade", "season"].includes(opt.groupBy) ? opt.groupBy : "decade"),
+      simLevel: +opt.simLevel || 3, decades, roster: makeSlots(mode.sport, opt).map(slot => ({ slot, inst: null })), pool
     };
     const sk = DIFFS[opt.diff].skips;
     g.yearSwaps = sk; g.teamSwaps = sk; g.skips = sk;
-    g.fpool = opt.style === "salary" ? pool.inst : filtered(pool, opt.diff);
+    const gp = pool.grouped = pool.grouped || {};
+    const gpool = gp[g.groupBy] = gp[g.groupBy] || groupedPool(g, pool.inst);
+    g.fpool = opt.style === "salary" ? pool.inst : filtered({ inst: gpool, pct: pool.pct }, opt.diff);
     g.fgroups = buildGroups(g);
     if (opt.style === "salary") {
       g.salary = salaryList(pool);
@@ -431,7 +625,7 @@
   }
   const calCache = {};
   function calibrate(g) {
-    const ck = [g.mode.id, g.diff, g.style, g.opt.bench ? 1 : 0, g.opt.formation || "", g.groupBy].join("|");
+    const ck = [g.mode.id, g.diff, g.style, g.opt.bench ? 1 : 0, g.opt.formation || "", g.groupBy, (g.decades || []).join(",")].join("|");
     let ref = calCache[ck];
     if (ref === undefined) {
       const savedF = RNG.f; RNG.seed("cal|" + ck);
@@ -503,7 +697,11 @@
   function poisson(l) { const L = Math.exp(-l); let k = 0, p = 1; do { k++; p *= R(); } while (p > L); return k - 1; }
   function simGameFB(T, oppR, scale) {
     const D = Math.max(-5, T - oppR), k = 6, s = scale || 1;
-    const us = poisson(1.35 * Math.exp(D / k) * s), them = poisson(1.35 * Math.exp(-D / k) * s);
+    let us = poisson(1.35 * Math.exp(D / k) * s), them = poisson(1.35 * Math.exp(-D / k) * s);
+    // keep the result, but keep scorelines believable (no 19-0)
+    const squash = (m) => m <= 3 ? m : 3 + Math.round(Math.log2(m - 2));
+    if (us - them > 3) us = them + squash(us - them); else if (them - us > 3) them = us + squash(them - us);
+    if (us > 7) { them = Math.max(0, them - (us - 7)); us = 7; }
     return { us, them, win: us > them, draw: us === them };
   }
 
@@ -667,22 +865,49 @@
   // ---------- Stats & grade ----------
   function playerStats(g) {
     const filled = g.roster.filter(r => r.inst);
-    const out = filled.map(r => {
-      const i = r.inst, e = i.r * fit(i, r.slot.pos), st = r.slot.starter;
-      if (g.sport === "bb") {
-        const pos = i.pos[0];
-        const ppg = clamp((st ? 6 : 3) + (e - 64) * (st ? 0.62 : 0.35) + gauss() * 1.5, 2, 38);
-        const rpg = clamp((["PF", "C"].includes(pos) ? 6 : pos === "SF" ? 4 : 2.5) + (e - 70) * 0.12 + gauss(), 1, 16);
-        const apg = clamp((pos === "PG" ? 6 : pos === "SG" ? 3.5 : 2) + (e - 70) * 0.1 + gauss() * 0.8, 0.5, 12);
-        return { inst: i, slot: r.slot, line: ppg.toFixed(1) + " PPG · " + rpg.toFixed(1) + " RPG · " + apg.toFixed(1) + " APG", score: ppg + rpg * 0.7 + apg * 0.9 };
-      }
-      const pos = r.slot.pos;
-      if (pos === "GK") { const cs = g.season.games.filter(x => x.them === 0).length; return { inst: i, slot: r.slot, line: cs + (cs === 1 ? " clean sheet" : " clean sheets"), score: cs * 0.9 + e * 0.1 }; }
-      const share = pos === "ATT" ? 0.34 : pos === "MID" ? 0.16 : 0.05;
-      const goals = Math.max(0, Math.round(g.season.me.gf * share * (e / 85) + gauss() * 2));
-      const assists = Math.max(0, Math.round(g.season.me.gf * (pos === "MID" ? 0.16 : pos === "ATT" ? 0.1 : 0.05) * (e / 85) + gauss()));
-      return { inst: i, slot: r.slot, line: goals + (goals === 1 ? " goal · " : " goals · ") + assists + (assists === 1 ? " assist" : " assists"), score: goals + assists * 0.7 + (pos === "DEF" ? e * 0.08 : 0) };
-    });
+    const jit = (x, a) => x * (1 + gauss() * a);
+    let out;
+    if (g.sport === "bb") {
+      // start from each player's real line, then share the ball: a team of five scorers can't all keep their numbers
+      const base = filled.map(r => {
+        const i = r.inst, f = fit(i, r.slot.pos), st = i.st || {}, min = r.slot.starter ? 1 : 0.62;
+        const est = (k, d) => (st[k] != null ? pgOf(st, k) : d) * f * min;
+        return { r, i, pts: est("pts", (i.r - 50) * 0.55), reb: est("trb", 5), ast: est("ast", 3), stl: est("stl", 1), blk: est("blk", 0.6) };
+      });
+      const tot = (k) => base.reduce((a, b) => a + b[k], 0);
+      const fac = { pts: clamp(Math.pow(122 / Math.max(1, tot("pts")), 0.55), 0.62, 1.12), reb: clamp(Math.pow(48 / Math.max(1, tot("reb")), 0.5), 0.68, 1.12), ast: clamp(Math.pow(28 / Math.max(1, tot("ast")), 0.5), 0.65, 1.12) };
+      const pc = (v) => v == null ? null : clamp(v + gauss() * 0.015, 0.2, 0.99);
+      out = base.map(b => {
+        const pts = clamp(jit(b.pts * fac.pts, 0.05), 0.5, 40), reb = clamp(jit(b.reb * fac.reb, 0.06), 0.3, 17), ast = clamp(jit(b.ast * fac.ast, 0.06), 0.2, 13);
+        const stl = clamp(jit(b.stl, 0.08), 0, 3.5), blk = clamp(jit(b.blk, 0.08), 0, 4.5), st = b.i.st || {};
+        const sl = { pts, reb, ast, stl, blk, p3: st.p3a >= 40 ? pc(st.p3 / st.p3a) : null, p2: st.fga ? pc((st.fg - (st.p3 || 0)) / Math.max(1, st.fga - (st.p3a || 0))) : null, ft: st.fta ? pc(st.ft / st.fta) : null };
+        const parts = [pts.toFixed(1) + " PTS", reb.toFixed(1) + " REB", ast.toFixed(1) + " AST", stl.toFixed(1) + " STL", blk.toFixed(1) + " BLK"];
+        if (sl.p3 != null) parts.push(Math.round(sl.p3 * 100) + "% 3P"); if (sl.ft != null) parts.push(Math.round(sl.ft * 100) + "% FT");
+        return { inst: b.i, slot: b.r.slot, sim: sl, line: parts.join(" · "), score: pts + reb * 0.75 + ast * 0.95 + (stl + blk) * 1.2 + b.i.r * 0.05 };
+      });
+    } else {
+      const gp = g.season.games.length, gf = g.season.me.gf;
+      const base = filled.map(r => {
+        const i = r.inst, f = fit(i, r.slot.pos), st = i.st, pos = r.slot.pos;
+        const per90 = (k, d) => st && st.min >= 270 ? st[k] / (st.min / 90) : d;
+        const dg = pos === "ATT" ? 0.45 : pos === "MID" ? 0.15 : pos === "DEF" ? 0.04 : 0, da = pos === "ATT" ? 0.18 : pos === "MID" ? 0.17 : pos === "DEF" ? 0.07 : 0;
+        const penShare = st && st.g >= 3 && st.pen != null ? st.pen / st.g : 0;
+        return { r, i, pos, penShare, g: per90("g", dg) * f * gp * 0.92, a: per90("a", da) * f * gp * 0.92 };
+      });
+      const tg = base.reduce((a, b) => a + b.g, 0), ta = base.reduce((a, b) => a + b.a, 0);
+      const fg = tg > 0 ? clamp((gf * 0.85) / tg, 0.75, 1.5) : 0, fa = ta > 0 ? clamp((gf * 0.65) / ta, 0.75, 1.5) : 0;
+      const cs = g.season.games.filter(x => x.them === 0).length;
+      out = base.map(b => {
+        const goals = b.pos === "GK" ? 0 : Math.max(0, Math.round(jit(b.g * fg, 0.12))), assists = b.pos === "GK" ? 0 : Math.max(0, Math.round(jit(b.a * fa, 0.15)));
+        const apps = Math.max(1, gp - Math.max(0, Math.round(Math.abs(gauss()) * 2.2)));
+        const parts = [apps + " apps"];
+        const pen = b.pos === "GK" ? 0 : Math.min(goals, Math.round(goals * b.penShare));
+        if (b.pos === "GK") parts.push(cs + (cs === 1 ? " clean sheet" : " clean sheets"));
+        else { parts.push(goals + (goals === 1 ? " goal" : " goals") + (pen ? "(p" + pen + ")" : ""), assists + (assists === 1 ? " assist" : " assists")); if (b.pos === "DEF") parts.push(cs + " clean sheets"); }
+        const score = b.pos === "GK" ? cs * 0.85 + b.i.r * 0.12 : goals + assists * 0.7 + (b.pos === "DEF" ? cs * 0.35 : 0) + b.i.r * 0.08;
+        return { inst: b.i, slot: b.r.slot, sim: { apps, g: goals, a: assists, cs, pen }, line: parts.join(" · "), score };
+      });
+    }
     return { list: out, mvp: out.reduce((a, b) => b.score > a.score ? b : a, out[0]) };
   }
   function grade(g) {
@@ -710,7 +935,7 @@
     RNG, DIFFS, SIM_LEVELS, NBA_ORDER, NBA_SEASONS, FB_SPECIAL, LEAGUE_NAMES, BIG5, seasonStr, initDB, DB, NOW,
     get modes() { return this._modes || (this._modes = buildModes()); },
     getPool, newGame, calibrate, spin, swapYear, swapTeam, cards, fit, placeable, posLabel, posShort, teamRating, price, spent,
-    runSeason, runPlayoffs, playerStats, grade, nbaTeamName, teamName, labelFor, shuffle, hashStr, careerOf, peakOf, norm
+    runSeason, runPlayoffs, playerStats, grade, statChips, statDetail, decadesOf, FB_SIZES, cleanDecades, statNote, spanText, decadeOf, nbaTeamName, teamName, labelFor, shuffle, hashStr, careerOf, peakOf, norm
   };
   G.Engine = Engine;
 })(typeof window !== "undefined" ? window : globalThis);

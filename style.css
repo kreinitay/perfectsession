@@ -391,3 +391,87 @@ hr.sep { border: 0; border-top: 1px solid var(--line); margin: 16px 0; }
 .sim-tiles .tile { min-height: 74px; align-items: center; text-align: center; padding: 10px 6px; }
 .sim-tiles .tile b { font-size: 1.8rem; }
 @media (max-width: 520px) { .sim-tiles .tile span { font-size: .72rem; } }
+
+/* Real stat lines */
+.stats { display: flex; flex-wrap: wrap; gap: 4px 5px; grid-column: 1 / -1; margin-top: 3px; align-items: center; }
+.stats i { font-style: normal; display: inline-flex; align-items: baseline; gap: 4px; padding: 3px 7px; border-radius: 8px; background: color-mix(in srgb, var(--surface) 70%, transparent); border: 1px solid var(--line); font-size: .64rem; font-weight: 600; letter-spacing: .05em; color: var(--muted); }
+.stats i b { color: var(--text); font-size: .84rem; font-weight: 700; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.stats em { font-style: normal; font-size: .72rem; color: var(--dim); margin-left: 2px; }
+.stats.none { font-size: .74rem; color: var(--dim); }
+.cand.on .stats i { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+.slot .stats { gap: 3px; margin-top: 4px; }
+.slot .stats i { padding: 1px 4px; font-size: .52rem; border-radius: 6px; gap: 2px; }
+.slot .stats i b { font-size: .7rem; }
+.pcard .stats { margin-top: 6px; }
+.pcard .stats i { padding: 2px 5px; }
+.rl .stats { margin-top: 6px; }
+.rl .simline { color: var(--text); opacity: .85; }
+.ultra { margin: 2px 0 12px; padding: 9px 12px; border-radius: 12px; border: 1px dashed var(--accent); color: var(--accent); font-weight: 700; font-size: .85rem; }
+.tile .tag { font-size: .62rem; vertical-align: middle; margin-left: 4px; }
+.stat-table { overflow-x: auto; margin-top: 8px; border: 1px solid var(--line); border-radius: 12px; }
+.stat-table table { border-collapse: collapse; width: 100%; font-size: .8rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stat-table th, .stat-table td { padding: 6px 9px; text-align: right; border-bottom: 1px solid var(--line); }
+.stat-table th { color: var(--dim); font-weight: 700; font-size: .68rem; letter-spacing: .06em; text-transform: uppercase; background: var(--surface-2); position: sticky; top: 0; }
+.stat-table td { color: var(--text); }
+.stat-table .tl { text-align: left; }
+.stat-table tr:last-child td { border-bottom: 0; }
+@media (max-width: 640px) {
+  .slot .stats { display: none; }
+  .stats i { font-size: .6rem; padding: 2px 5px; }
+  .stats i b { font-size: .78rem; }
+}
+
+/* All-stats arrow + panel */
+.exp { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--line-2); color: var(--accent); font-size: .72rem; font-weight: 700; cursor: pointer; background: var(--surface); transition: background .12s, border-color .12s; }
+.exp:hover { border-color: var(--accent); }
+.exp svg { transition: transform .18s; }
+.exp.open svg { transform: rotate(180deg); }
+.pcard .exp span, .slot .exp { display: none; }
+.pcard .exp { padding: 4px 6px; }
+.sdetail { grid-column: 1 / -1; margin-top: 8px; padding: 10px 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); text-align: left; cursor: default; animation: sdIn .18s ease-out; }
+@keyframes sdIn { from { opacity: 0; transform: translateY(-4px); } }
+.sdetail table { width: 100%; border-collapse: collapse; font-size: .82rem; font-variant-numeric: tabular-nums; }
+.sdetail th { color: var(--dim); font-size: .66rem; letter-spacing: .06em; text-transform: uppercase; font-weight: 700; text-align: right; padding: 0 0 6px; }
+.sdetail td { padding: 4px 0; border-top: 1px solid var(--line); text-align: right; color: var(--text); }
+.sdetail td:first-child, .sdetail th:first-child { text-align: left; color: var(--muted); font-weight: 600; }
+.sdetail td + td { padding-left: 12px; }
+.sone { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.sone span { display: inline-flex; align-items: baseline; gap: 5px; padding: 4px 8px; border-radius: 9px; border: 1px solid var(--line); font-size: .7rem; color: var(--muted); font-weight: 600; }
+.sone b { color: var(--led); font-size: .9rem; font-variant-numeric: tabular-nums; }
+.snote { margin: 8px 0 0; font-size: .72rem; color: var(--dim); line-height: 1.4; }
+.stat-pop { max-width: 520px; width: calc(100% - 32px); max-height: 86vh; overflow: auto; }
+.stat-pop .sdetail { margin-top: 12px; }
+.rl > div { min-width: 0; }
+
+/* Decade picker */
+.dec-pick { margin-top: 14px; padding: 14px; border-radius: 16px; border: 1px solid var(--line); background: var(--surface-2); }
+.dec-pick .row { gap: 10px; margin-bottom: 10px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--surface); color: var(--muted); font: 800 1.05rem/1 "Big Shoulders Display", sans-serif; letter-spacing: .02em; transition: background .12s, border-color .12s, color .12s; }
+.chip:hover { border-color: var(--accent); }
+.chip.on { background: color-mix(in srgb, var(--accent) 22%, var(--surface)); border-color: var(--accent); color: var(--text); }
+
+/* Football team sizes */
+.field-view.fb.n8 { aspect-ratio: 1 / 1.12; }
+.field-view.fb.n11, .field-view.fb.lines4 { aspect-ratio: 1 / 1.25; }
+.field-view.n8 .slot { width: clamp(78px, 21%, 130px); min-height: 60px; padding: 6px 7px; }
+.field-view.n11 .slot { width: clamp(62px, 17.5%, 112px); min-height: 52px; padding: 5px 6px; border-radius: 11px; }
+.field-view.n11 .slot .nm { font-size: .74rem; }
+.field-view.n11 .slot .meta, .field-view.n11 .slot .stats { display: none; }
+.field-view.n11 .slot .rt { font-size: .95rem; top: 4px; right: 5px; }
+.field-view.n11 .slot .sp { font-size: .8rem; }
+.field-view.n11 .slot.filled .meta { display: none; }
+.form-tiles { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.form-tiles .tile { display: grid; grid-template-columns: 1fr 46px; grid-template-rows: auto 1fr; column-gap: 8px; }
+.form-tiles .tile b, .form-tiles .tile span { grid-column: 1; }
+.fmini { grid-column: 2; grid-row: 1 / span 2; width: 46px; height: 46px; align-self: center; }
+.fmini rect { fill: none; stroke: var(--line-2); stroke-width: 3; }
+.fmini circle { fill: var(--muted); }
+.fmini circle.gk { fill: var(--accent); }
+.tile.on .fmini circle:not(.gk) { fill: var(--text); }
+@media (max-width: 640px) {
+  .field-view.n11 .slot { width: 19%; min-height: 46px; padding: 4px; }
+  .field-view.n11 .slot .nm { font-size: .64rem; }
+  .field-view.n11 .slot .sp { font-size: .7rem; }
+  .field-view.n11 .slot .rt { font-size: .8rem; }
+}

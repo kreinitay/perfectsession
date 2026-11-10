@@ -34,10 +34,10 @@
 
   // ---------- state ----------
   const DEF = {
-    bb: { modeId: "nba_all", tab: "all", diff: "normal", style: "spinfull", bench: true, showRatings: true, teamName: "", groupBy: "season", simLevel: 3 },
-    fb: { modeId: "fb_all", tab: "alltime", diff: "normal", style: "spinfull", formation: "2-2-1", showRatings: true, teamName: "", groupBy: "season", simLevel: 3, league: "GB1", ucl: true }
+    bb: { modeId: "nba_all", tab: "all", diff: "normal", style: "spinfull", bench: true, showRatings: true, showStats: true, teamName: "", groupBy: "decade", simLevel: 3 },
+    fb: { modeId: "fb_all", tab: "alltime", diff: "normal", style: "spinfull", formation: "2-2-1", size: 6, showRatings: true, showStats: true, teamName: "", groupBy: "decade", simLevel: 3, league: "GB1", ucl: true }
   };
-  const saved = store.get("setup2", {});
+  const saved = store.get("setup3", {});
   const S = {
     screen: "home", sport: "bb",
     setup: { bb: Object.assign({}, DEF.bb, saved.bb || {}), fb: Object.assign({}, DEF.fb, saved.fb || {}) },
@@ -107,13 +107,14 @@
     ov.innerHTML = `<div class="panel" role="dialog" aria-modal="true" aria-labelledby="htT"><h2 id="htT">How to play</h2>
       <ol class="howto">
         <li><b>Pick a game.</b> 82-0 is basketball, 38-0 is football. Choose a version (all-time, a decade, a historic season, World Cup, a league) and a difficulty.</li>
-        <li><b>Draft your team.</b> Spin a random team and season and take a player from it, or pick from 5 cards, or spend a salary cap. Don't like the spin? A <b>year swap</b> keeps the team but changes the season, a <b>team swap</b> keeps the season but changes the team.</li>
+        <li><b>Draft your team.</b> Spin a random team and take a player from it, or pick from 5 cards, or spend a salary cap. By default you spin a <b>team and a decade</b> (Bulls, 1990s): the player counts for his whole run there that decade. You can switch to one exact season or a whole franchise. Don't like the spin? A <b>decade or year swap</b> keeps the team, a <b>team swap</b> keeps the decade or season.</li>
+        <li><b>Read the numbers.</b> Every player shows his real stats: points, rebounds, assists, steals, blocks and shooting in basketball; apps, goals with penalties like 25(p6), assists and clean sheets in football. Turn stats and ratings off for ultra ball knowledge.</li>
         <li><b>Put players where they belong.</b> Basketball: a player's own position and the ones next to it are fine, two away costs 20%, further isn't allowed (no Isiah Thomas at center). Football: a striker can play midfield at -35% but never defense, and only keepers go in goal.</li>
         <li><b>Chemistry.</b> Players from the same team within two seasons of each other add a small bonus.</li>
         <li><b>Play the season.</b> Watch every game or skip to the end. Then come the playoffs or knockouts.</li>
-        <li><b>The goal:</b> win every game and the title. Ratings can stay hidden for a true ball-knowledge test.</li>
+        <li><b>The goal:</b> win every game and the title.</li>
       </ol>
-      <p class="muted small" style="margin-top:10px">Keyboard: <b>Space</b> spins or deals, <b>Y</b> year swap, <b>G</b> team swap, <b>1-9</b> picks a player, <b>Q W E R T</b> places him.</p>
+      <p class="muted small" style="margin-top:10px">Keyboard: <b>Space</b> spins or deals, <b>Y</b> decade/year swap, <b>G</b> team swap, <b>I</b> all stats, <b>1-9</b> picks a player, <b>Q W E R T</b> places him.</p>
       <div class="row" style="justify-content:flex-end;margin-top:16px"><button class="btn" data-close>Got it</button></div></div>`;
     document.body.appendChild(ov);
     ov.addEventListener("click", (e) => { if (e.target.closest("[data-close]") || e.target === ov) ov.remove(); });
@@ -126,7 +127,48 @@
     $("#toasts").appendChild(t); setTimeout(() => t.remove(), 4200);
   }
   const youngTag = (i) => i.young ? `<span class="tag rookie">${i.p.sport === "fb" ? "Wonderkid" : "Rookie"}</span>` : "";
-  const seasonLabel = (g, i) => g.mode.kind === "wc" ? "World Cup " + i.y : E.seasonStr(i.y);
+  const seasonLabel = (g, i) => E.spanText(g, i);
+  // real stat line: chips like 27.8 PTS. Hidden when "show stats" is off (until the season ends)
+  // Player stat line: main numbers on the card, the arrow opens everything (per game + total)
+  const REG = new Map(); let regN = 0;
+  const OPEN = new Set();
+  const openKey = (i) => i.p.key + "|" + i.key + "|" + (i.y0 || i.y);
+  function detailHtml(i) {
+    const d = E.statDetail(i); if (!d) return "";
+    return `<div class="sdetail" data-sd><table><thead><tr><th></th><th>${esc(d.cols[0])}</th><th>${esc(d.cols[1])}</th></tr></thead><tbody>${d.rows.map(r => `<tr><td>${esc(r[0])}</td><td>${esc(String(r[1]))}</td><td>${esc(String(r[2]))}</td></tr>`).join("")}</tbody></table>
+      ${d.one.length ? `<div class="sone">${d.one.map(([k, v]) => `<span><b>${esc(String(v))}</b>${esc(k)}</span>`).join("")}</div>` : ""}${d.note ? `<p class="snote">${esc(d.note)}</p>` : ""}</div>`;
+  }
+  function statsHtml(g, i, opt) {
+    opt = opt || {};
+    if (!(g.showStats || g.revealed)) return "";
+    const chips = E.statChips(i);
+    if (!chips.length) return opt.compact ? "" : `<span class="stats none">No stat line for this era</span>`;
+    const note = opt.compact ? "" : (opt.prefix ? opt.prefix + " · " : "") + E.statNote(i);
+    const chipH = chips.map(([k, v]) => `<i><b>${esc(String(v))}</b>${k === "CLEAN SHEETS" && opt.compact ? "CS" : k}</i>`).join("");
+    if (opt.compact && !opt.arrow) return `<span class="stats">${chipH}</span>`;
+    const id = "s" + (++regN); REG.set(id, i);
+    const open = OPEN.has(openKey(i)) && !opt.overlay;
+    return `<span class="stats">${chipH}${note ? `<em>${esc(note)}</em>` : ""}<span class="exp ${open ? "open" : ""}" data-exp="${id}" ${opt.overlay ? 'data-ov="1"' : ""} role="button" aria-label="All stats for ${esc(i.p.name)}" title="All stats"><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span>All stats</span></span></span>${open ? detailHtml(i) : ""}`;
+  }
+  function statOverlay(i) {
+    const ov = document.createElement("div"); ov.className = "overlay";
+    ov.innerHTML = `<div class="panel stat-pop" role="dialog" aria-modal="true"><div class="row"><h3>${esc(i.p.name)}</h3><span class="spacer"></span><button class="btn ghost small" data-close>Close</button></div>
+      <p class="muted small">${esc(E.posLabel(i))}</p>${detailHtml(i)}</div>`;
+    document.body.appendChild(ov);
+    ov.addEventListener("click", (e) => { if (e.target.closest("[data-close]") || e.target === ov) ov.remove(); });
+    $("[data-close]", ov).focus();
+  }
+  // capture phase, so opening stats never also picks the player
+  document.addEventListener("click", (e) => {
+    const ex = e.target.closest("[data-exp]"); if (!ex) return;
+    e.preventDefault(); e.stopPropagation();
+    const i = REG.get(ex.dataset.exp); if (!i) return;
+    if (ex.dataset.ov) return statOverlay(i);
+    const host = ex.closest(".cand, .rl, .pcard"), k = openKey(i), cur = host && host.querySelector("[data-sd]");
+    if (cur) { cur.remove(); ex.classList.remove("open"); OPEN.delete(k); }
+    else if (host) { ex.parentElement.insertAdjacentHTML("afterend", detailHtml(i)); ex.classList.add("open"); OPEN.add(k); }
+  }, true);
+  const swapWord = (g) => g.groupBy === "decade" ? "Decade" : "Year";
   function instMeta(g, i) { return E.teamName(g.mode, i.team, i.y) + " · " + seasonLabel(g, i); }
   const ratingHtml = (g, i, cls) => (g.showRatings || g.revealed) ? `<span class="${cls}">${i.r}</span>` : `<span class="${cls} q">?</span>`;
   const recordStr = (sport, s) => sport === "fb" ? `${s.w}-${s.d}-${s.l}` : `${s.w}-${s.l}`;
@@ -178,7 +220,7 @@
         <button class="door" data-start="fb">${fbArt}
           <span class="sport">Football</span>
           <span class="jumbo">38<span class="dash">-</span>0</span>
-          <span class="lede">Pick a goalkeeper and five outfielders in your formation, then win all 38 and lift the trophy.</span>
+          <span class="lede">Pick a keeper and your outfielders, 4 to 11 a side, then win all 38 and lift the trophy.</span>
           <span class="chips"><span class="tag">World Cup 2026</span><span class="tag">All-time World Cups</span><span class="tag">Premier League</span><span class="tag">LaLiga</span><span class="tag">10 historic seasons</span></span>
           <span class="btn go">Play 38-0</span></button>
       </section>
@@ -198,32 +240,48 @@
   }
 
   // ---------- SETUP ----------
-  function saveSetup() { store.set("setup2", S.setup); }
+  function saveSetup() { store.set("setup3", S.setup); }
+  // tiny pitch preview for a formation tile
+  function formMini(f) {
+    const x = f.split("-").map(Number).filter(n => n > 0), lines = x.length + 1, dots = [];
+    const Y = (li) => 88 - (li * 76) / Math.max(1, lines - 1);
+    dots.push([50, 88]);
+    x.forEach((n, li) => { for (let k = 1; k <= n; k++) dots.push([(100 / (n + 1)) * k, Y(li + 1)]); });
+    return `<svg class="fmini" viewBox="0 0 100 100" aria-hidden="true"><rect x="2" y="2" width="96" height="96" rx="6"/>${dots.map(([cx, cy], i) => `<circle cx="${cx}" cy="${cy}" r="${i ? 6 : 5.5}" class="${i ? "" : "gk"}"/>`).join("")}</svg>`;
+  }
   function renderSetup() {
     const sp = S.sport, st = S.setup[sp], tabs = sp === "bb" ? BB_TABS : FB_TABS;
     const mode = E.modes[st.modeId];
     if (st.style === "salary" && !mode.salary) st.style = "spin3";
     const tab = tabs.find(t => t[0] === st.tab) || tabs[0];
+    st.decMap = st.decMap || {};
+    const decs = E.decadesOf(mode), pickedDecs = E.cleanDecades(mode, st.decMap[mode.id]) || decs;
     const tile = (m) => `<button class="tile ${m.id === st.modeId ? "on" : ""}" data-mode="${m.id}"><b>${esc(m.name)}</b><span>${esc(m.desc)}</span></button>`;
     const diffTile = (d, i) => `<button class="tile ${d === st.diff ? "on" : ""}" data-diff="${d}"><b>${E.DIFFS[d].name}</b><span>${esc(E.DIFFS[d].desc)}</span>
       <span class="diff-meter">${[0, 1, 2, 3].map(k => `<i class="${k <= i ? "f" : ""}"></i>`).join("")}</span></button>`;
     const styleTile = ([id, nm, ds]) => { const dis = id === "salary" && !mode.salary; return `<button class="tile ${id === st.style ? "on" : ""} ${dis ? "disabled" : ""}" data-style="${id}" ${dis ? "disabled" : ""}><b>${nm}</b><span>${dis ? "Only in All-Time NBA." : esc(ds)}</span></button>`; };
     app.innerHTML = `
-      <div class="section-head"><div><h1>${sp === "bb" ? "82-0" : "38-0"} setup</h1><p class="muted">${sp === "bb" ? "Basketball: build a starting five, win every game." : "Football: a keeper and five outfielders, win all 38."}</p></div></div>
+      <div class="section-head"><div><h1>${sp === "bb" ? "82-0" : "38-0"} setup</h1><p class="muted">${sp === "bb" ? "Basketball: build a starting five, win every game." : "Football: 4, 6, 8 or 11 a side, win all 38."}</p></div></div>
       <div class="setup">
         <div class="panel">
           <div class="step"><h3>Game version</h3><p class="muted small">Which players and teams can show up in your draft.</p>
             <div class="tabs">${tabs.map(t => `<button class="${t[0] === tab[0] ? "on" : ""}" data-tab="${t[0]}">${t[1]}</button>`).join("")}</div>
-            <div class="tiles">${tab[2].map(id => tile(E.modes[id])).join("")}</div></div>
+            <div class="tiles">${tab[2].map(id => tile(E.modes[id])).join("")}</div>
+            ${decs.length >= 3 ? `<div class="dec-pick"><div class="row"><b>Decades in the draft</b><span class="muted small">Pick 2 or more, or all of them.</span><span class="spacer"></span><button class="btn ghost small" data-decall="1" ${pickedDecs.length === decs.length ? "disabled" : ""}>All decades</button></div>
+              <div class="chips">${decs.map(d => `<button class="chip ${pickedDecs.includes(d) ? "on" : ""}" data-dec="${d}" aria-pressed="${pickedDecs.includes(d)}">${d}s</button>`).join("")}</div></div>` : ""}</div>
           <hr class="sep">
           <div class="step"><h3>Difficulty</h3><p class="muted small">Each version is balanced on its own, so Easy in one is not the same as Easy in another.</p>
             <div class="tiles diff-tiles">${DIFF_ORDER.map(diffTile).join("")}</div></div>
           <hr class="sep">
           <div class="step"><h3>How you draft</h3><p class="muted small">How players are offered to you each round.</p><div class="tiles">${STYLES.map(styleTile).join("")}</div></div>
           <hr class="sep">
-          <div class="step"><h3>Spin by</h3><p class="muted small">${mode.single ? "This version is one season, so you always spin a team." : "Spin one exact season of a team, or a whole franchise and take any player from any of its years."}</p>
-            <div class="tiles"><button class="tile ${st.groupBy !== "franchise" || mode.single ? "on" : ""}" data-group="season"><b>Team + season</b><span>Example: ${sp === "bb" ? "1995-96 Bulls" : "Barcelona 2010-11"}. Only that year's roster.</span></button>
-              <button class="tile ${st.groupBy === "franchise" && !mode.single ? "on" : ""} ${mode.single ? "disabled" : ""}" data-group="franchise" ${mode.single ? "disabled" : ""}><b>Whole franchise</b><span>Example: ${sp === "bb" ? "Bulls, any year" : "Barcelona, any year"}. Each player at his best season there.</span></button></div></div>
+          <div class="step"><h3>Spin by</h3><p class="muted small">${mode.single ? "This version is one season, so you always spin a team." : "What one spin gives you. You can change this any time."}</p>
+            <div class="tiles tiles3">${[
+              ["decade", "Team + decade", sp === "bb" ? "Example: Bulls, 1990s. A player counts for his whole 90s run there, stats averaged." : "Example: Barcelona, 2010s. A player counts for his whole run there that decade, stats added up."],
+              ["season", "Team + one season", sp === "bb" ? "Example: 1995-96 Bulls. Only that year's roster and numbers." : "Example: Barcelona 2010-11. Only that year's squad and numbers."],
+              ["franchise", "Whole franchise", sp === "bb" ? "Example: Bulls, any year. Each player for his full time at the club." : "Example: Barcelona, any year. Each player for his full time at the club."]
+            ].map(([id, nm, ds]) => { const on = mode.single ? id === "season" : (st.groupBy || "decade") === id, dis = mode.single && id !== "season";
+              return `<button class="tile ${on ? "on" : ""} ${dis ? "disabled" : ""}" data-group="${id}" ${dis ? "disabled" : ""}><b>${nm}${id === "decade" ? ` <span class="tag">Default</span>` : ""}</b><span>${ds}</span></button>`; }).join("")}</div></div>
           <hr class="sep">
           <div class="step"><h3>Season simulation</h3><p class="muted small">How strong the other teams are once your season starts. 3 is normal.</p>
             <div class="tiles sim-tiles">${[1, 2, 3, 4, 5].map(n => `<button class="tile ${(st.simLevel || 3) === n ? "on" : ""}" data-sim="${n}"><b>${n}</b><span>${E.SIM_LEVELS[n]}</span></button>`).join("")}</div></div>
@@ -235,16 +293,22 @@
           <div class="step"><h3>${sp === "bb" ? "Roster" : "Formation"}</h3>
             ${sp === "bb"
               ? `<p class="muted small">Bench players add depth to your rating.</p><div class="tiles"><button class="tile ${!st.bench ? "on" : ""}" data-bench="0"><b>Starting 5</b><span>Five picks. Quick and pure.</span></button><button class="tile ${st.bench ? "on" : ""}" data-bench="1"><b>Starting 5 + 3 bench</b><span>Eight picks. Depth matters.</span></button></div>`
-              : `<p class="muted small">Always one goalkeeper, then defenders, midfielders and attackers.</p><div class="tiles">${FORMATIONS.map(f => `<button class="tile ${f === st.formation ? "on" : ""}" data-form="${f}"><b>GK + ${f}</b><span>${f.split("-")[0]} DEF · ${f.split("-")[1]} MID · ${f.split("-")[2]} ATT</span></button>`).join("")}</div>`}
+              : `<p class="muted small">How many a side, then the shape. Always one goalkeeper.</p>
+                <div class="tiles size-tiles">${[4, 6, 8, 11].map(n => `<button class="tile ${(st.size || 6) === n ? "on" : ""}" data-size="${n}"><b>${n} a side</b><span>GK + ${n - 1} outfielders · ${E.FB_SIZES[n].length} formations</span></button>`).join("")}</div>
+                <div class="tiles form-tiles" style="margin-top:10px">${E.FB_SIZES[st.size || 6].map(f => { const x = f.split("-").map(Number), d = x[0], m = x.length === 4 ? x[1] + x[2] : x[1], a = x[x.length - 1];
+                  return `<button class="tile ${f === st.formation ? "on" : ""}" data-form="${f}"><b>${f}</b><span>${d} DEF · ${m} MID · ${a} ATT</span>${formMini(f)}</button>`; }).join("")}</div>`}
           </div>
         </div>
         <aside class="panel summary">
           <h3>Your season</h3>
           <dl><dt>Version</dt><dd>${esc(mode.name)}</dd><dt>Difficulty</dt><dd>${E.DIFFS[st.diff].name}</dd><dt>Draft</dt><dd>${styleName(st.style)}</dd>
-            <dt>${sp === "bb" ? "Roster" : "Formation"}</dt><dd>${sp === "bb" ? (st.bench ? "5 + 3 bench" : "Starting 5") : "GK + " + st.formation}</dd><dt>Goal</dt><dd>${mode.games}-0 and the title</dd>
-            <dt>Swaps</dt><dd>${st.style === "salary" ? "None" : st.style === "cards" ? E.DIFFS[st.diff].skips + " redraws" : mode.single || st.groupBy === "franchise" ? E.DIFFS[st.diff].skips + " team" : E.DIFFS[st.diff].skips + " year + " + E.DIFFS[st.diff].skips + " team"}</dd>
+            <dt>${sp === "bb" ? "Roster" : "Formation"}</dt><dd>${sp === "bb" ? (st.bench ? "5 + 3 bench" : "Starting 5") : (st.size || 6) + " a side · " + st.formation}</dd><dt>Goal</dt><dd>${mode.games}-0 and the title</dd>
+            <dt>Swaps</dt><dd>${st.style === "salary" ? "None" : st.style === "cards" ? E.DIFFS[st.diff].skips + " redraws" : mode.single || st.groupBy === "franchise" ? E.DIFFS[st.diff].skips + " team" : E.DIFFS[st.diff].skips + (st.groupBy === "season" ? " year + " : " decade + ") + E.DIFFS[st.diff].skips + " team"}</dd>
+            ${decs.length >= 3 ? `<dt>Decades</dt><dd>${pickedDecs.length === decs.length ? "All" : pickedDecs.map(d => "'" + String(d).slice(2) + "s").join(", ")}</dd>` : ""}<dt>Spin by</dt><dd>${mode.single ? "Team" : { decade: "Team + decade", season: "Team + season", franchise: "Whole franchise" }[st.groupBy || "decade"]}</dd>
             <dt>Season sim</dt><dd>${st.simLevel || 3} · ${E.SIM_LEVELS[st.simLevel || 3]}</dd>${sp === "fb" && mode.kind !== "wc" ? `<dt>League</dt><dd>${E.LEAGUE_NAMES[st.league || mode.homeLeague || "GB1"]}${st.ucl !== false ? " + UCL" : ""}</dd>` : ""}</dl>
-          <label class="toggle"><input type="checkbox" id="showR" ${st.showRatings !== false || st.style === "salary" ? "checked" : ""} ${st.style === "salary" ? "disabled" : ""}><span>Show ratings while drafting<br><span class="muted small">Turn off for pure ball knowledge</span></span></label>
+          <label class="toggle"><input type="checkbox" id="showR" ${st.showRatings !== false || st.style === "salary" ? "checked" : ""} ${st.style === "salary" ? "disabled" : ""}><span>Show ratings<br><span class="muted small">The 45-99 number for each player</span></span></label>
+          <label class="toggle"><input type="checkbox" id="showS" ${st.showStats !== false ? "checked" : ""}><span>Show player stats<br><span class="muted small">${sp === "bb" ? "PTS, REB, AST, STL, BLK, 3P%, 2P%, FT%" : "Apps, goals (penalties), assists, clean sheets, minutes, cards"}</span></span></label>
+          ${st.showStats === false && st.showRatings === false && st.style !== "salary" ? `<p class="ultra">Ultra ball knowledge: names only.</p>` : ""}
           <input class="field" id="tname" maxlength="28" placeholder="Team name (optional)" value="${esc(st.teamName)}">
           <button class="btn big" id="startBtn">Start draft</button>
         </aside>
@@ -258,15 +322,24 @@
       else if (b.dataset.diff) st.diff = b.dataset.diff;
       else if (b.dataset.style) st.style = b.dataset.style;
       else if (b.dataset.bench) st.bench = b.dataset.bench === "1";
-      else if (b.dataset.form) st.formation = b.dataset.form;
+      else if (b.dataset.form) { st.formation = b.dataset.form; st.formBy = Object.assign({}, st.formBy, { [st.size || 6]: st.formation }); }
+      else if (b.dataset.size) { st.size = +b.dataset.size; st.formation = (st.formBy || {})[st.size] || E.FB_SIZES[st.size][0]; }
       else if (b.dataset.group) st.groupBy = b.dataset.group;
       else if (b.dataset.sim) st.simLevel = +b.dataset.sim;
       else if (b.dataset.league) st.league = b.dataset.league;
-      else if (b.id === "startBtn" || b.id === "startBtn2") { st.teamName = $("#tname").value.trim(); saveSetup(); return startGame(Object.assign({}, st), null); }
+      else if (b.dataset.decall) delete st.decMap[st.modeId];
+      else if (b.dataset.dec) {
+        const d = +b.dataset.dec, all = E.decadesOf(mode), cur = (E.cleanDecades(mode, st.decMap[st.modeId]) || all).slice();
+        const next = cur.includes(d) ? cur.filter(x => x !== d) : cur.concat(d).sort((a, b) => a - b);
+        if (next.length < 2) { toast("Keep at least 2 decades", "For one decade, pick that decade's own version."); return; }
+        if (next.length === all.length) delete st.decMap[st.modeId]; else st.decMap[st.modeId] = next;
+      }
+      else if (b.id === "startBtn" || b.id === "startBtn2") { st.teamName = $("#tname").value.trim(); saveSetup(); return startGame(Object.assign({}, st, { decades: (st.decMap || {})[st.modeId] || null }), null); }
       else return;
       st.teamName = $("#tname").value.trim(); saveSetup(); renderSetup();
     };
-    $("#showR").onchange = (e) => { st.showRatings = e.target.checked; saveSetup(); };
+    $("#showR").onchange = (e) => { st.showRatings = e.target.checked; saveSetup(); renderSetup(); };
+    $("#showS").onchange = (e) => { st.showStats = e.target.checked; saveSetup(); renderSetup(); };
     const ut = $("#uclT"); if (ut) ut.onchange = () => { st.ucl = ut.checked; saveSetup(); renderSetup(); };
   }
 
@@ -282,6 +355,7 @@
       g.teamName = opt.teamName || "Your Team";
       g.ui = { phase: "idle", spin: null, sel: null, cards: null, sal: { q: "", pos: "ALL", sort: "best", all: false } };
       if (opt.style === "salary") g.showRatings = true;
+      g.showStats = opt.showStats !== false;
       S.game = g;
       go("draft");
     }, 40);
@@ -290,8 +364,8 @@
     const d = store.get("daily", {}); const key = todayStr() + "|" + sport;
     if (d[key]) return toast("Already played", "Come back tomorrow for a new daily.");
     const opt = sport === "bb"
-      ? { modeId: "nba_all", diff: "normal", style: "spinfull", bench: true, showRatings: true, teamName: "Daily Squad", groupBy: "season", simLevel: 3 }
-      : { modeId: "fb_all", diff: "normal", style: "spinfull", formation: "2-2-1", showRatings: true, teamName: "Daily XI", groupBy: "season", simLevel: 3, league: "GB1", ucl: true };
+      ? { modeId: "nba_all", diff: "normal", style: "spinfull", bench: true, showRatings: true, showStats: true, teamName: "Daily Squad", groupBy: "decade", simLevel: 3 }
+      : { modeId: "fb_all", diff: "normal", style: "spinfull", formation: "2-2-1", showRatings: true, showStats: true, teamName: "Daily XI", groupBy: "decade", simLevel: 3, league: "GB1", ucl: true };
     S.sport = sport;
     startGame(opt, { date: todayStr(), sport, key });
   }
@@ -306,10 +380,13 @@
     <path d="M40 70a12 12 0 0 1 20 0"/></svg>`;
   function slotPositions(g) {
     if (g.sport === "bb") return g.roster.map(r => r.slot.starter ? COURT_POS[r.slot.pos] : null);
-    const rows = { GK: 86, DEF: 64, MID: 40, ATT: 15 };
-    const counts = {}; g.roster.forEach(r => counts[r.slot.pos] = (counts[r.slot.pos] || 0) + 1);
+    const rowOf = (r) => r.slot.row != null ? r.slot.row : { GK: 0, DEF: 1, MID: 2, ATT: 3 }[r.slot.pos];
+    const counts = {}; g.roster.forEach(r => { const k = rowOf(r); counts[k] = (counts[k] || 0) + 1; });
+    // empty lines (like 2-0-1) are skipped so the pitch has no gap
+    const used = [...new Set(g.roster.map(rowOf))].sort((a, b) => a - b);
+    const Yu = used.length >= 5 ? [87, 68, 50, 32, 13] : used.length === 4 ? [86, 64, 40, 15] : used.length === 3 ? [86, 55, 20] : [86, 35];
     const seen = {};
-    return g.roster.map(r => { const p = r.slot.pos, n = counts[p], k = seen[p] = (seen[p] || 0) + 1; return [(100 / (n + 1)) * k, rows[p]]; });
+    return g.roster.map(r => { const k = rowOf(r), n = counts[k], j = seen[k] = (seen[k] || 0) + 1; return [(100 / (n + 1)) * j, Yu[used.indexOf(k)]]; });
   }
   function slotHtml(g, r, idx, pos, targets) {
     const i = r.inst, t = targets && targets.has(idx);
@@ -319,13 +396,14 @@
     const f = E.fit(i, r.slot.pos);
     const showR = g.showRatings || g.revealed;
     return `<div class="slot filled" data-slot="${idx}" ${style}>${showR ? `<span class="rt">${Math.round(i.r * f)}</span>` : ""}<span class="sp">${lab}</span><span class="nm">${esc(i.p.name)}</span>
-      <span class="meta">${esc(seasonLabel(g, i))}${f < 1 ? ` · <span class="fitw">${Math.round(f * 100)}% fit</span>` : ""}${g.style === "salary" ? ` · $${i.price}M` : ""}</span></div>`;
+      <span class="meta">${esc(seasonLabel(g, i).split(" · ")[0])}${f < 1 ? ` · <span class="fitw">${Math.round(f * 100)}% fit</span>` : ""}${g.style === "salary" ? ` · $${i.price}M` : ""}</span>${statsHtml(g, i, { compact: true })}</div>`;
   }
   function fieldHtml(g, targets) {
     const pos = slotPositions(g);
     const main = g.roster.map((r, i) => pos[i] ? slotHtml(g, r, i, pos[i], targets) : "").join("");
     const bench = g.roster.map((r, i) => !pos[i] ? slotHtml(g, r, i, null, targets) : "").join("");
-    return `<div class="field-view ${g.sport}">${g.sport === "bb" ? courtSvg : pitchSvg}${main}</div>${bench ? `<div class="bench">${bench}</div>` : ""}`;
+    const big = g.sport === "fb" ? g.roster.length : 0;
+    return `<div class="field-view ${g.sport} ${big >= 11 ? "n11" : big >= 8 ? "n8" : ""} ${g.sport === "fb" && Math.max(...g.roster.map(r => r.slot.row || 0)) >= 4 ? "lines4" : ""}">${g.sport === "bb" ? courtSvg : pitchSvg}${main}</div>${bench ? `<div class="bench">${bench}</div>` : ""}`;
   }
   function renderDraft() {
     const g = S.game, u = g.ui;
@@ -338,7 +416,7 @@
       <div class="draft-top">
         <span class="pill">${esc(g.mode.name)} · ${E.DIFFS[g.diff].name}${S.daily ? " · Daily" : ""}</span>
         <span class="pill">${done ? `All <b>${total}</b> picked` : `Pick <b>${filled + 1}</b> of ${total}`}</span>
-        ${g.style === "salary" ? `<span class="pill">Budget <b>$${g.budget - E.spent(g)}M</b> left</span>` : (g.style === "cards" ? `<span class="pill">Redraws <b>${g.teamSwaps}</b></span>` : g.groupBy === "franchise" || g.mode.single ? `<span class="pill">Team swaps <b>${g.teamSwaps}</b></span>` : `<span class="pill">Swaps <b>${g.yearSwaps}</b> year · <b>${g.teamSwaps}</b> team</span>`)}
+        ${g.style === "salary" ? `<span class="pill">Budget <b>$${g.budget - E.spent(g)}M</b> left</span>` : (g.style === "cards" ? `<span class="pill">Redraws <b>${g.teamSwaps}</b></span>` : g.groupBy === "franchise" || g.mode.single ? `<span class="pill">Team swaps <b>${g.teamSwaps}</b></span>` : `<span class="pill">Swaps <b>${g.yearSwaps}</b> ${swapWord(g).toLowerCase()} · <b>${g.teamSwaps}</b> team</span>`)}
         <span class="pill">Team <b>${g.showRatings && filled ? tr.ovr : "?"}</b></span>
         ${tr.chem > 0 ? `<span class="pill">Chemistry <b>+${tr.chem}</b></span>` : ""}
         <span class="spacer"></span><button class="btn ghost small" id="help">How to play</button><button class="btn ghost small" id="quit">Quit draft</button>
@@ -362,17 +440,17 @@
       return `<div class="row"><h3>Pick one</h3><span class="spacer"></span><button class="btn ghost small" id="redraw" ${g.teamSwaps ? "" : "disabled"}>Redraw (${g.teamSwaps})</button></div>
         <div class="cards5">${u.cards.map((i, k) => `<button class="pcard ${u.sel === i ? "on" : ""}" data-c="${k}" style="animation-delay:${k * 60}ms">
           ${ratingHtml(g, i, "r")}<span class="ps">${E.posShort(i)}</span>${i.young ? `<span style="align-self:flex-start">${youngTag(i)}</span>` : ""}
-          <span class="n">${esc(i.p.name)}</span><span class="m">${esc(instMeta(g, i))}</span></button>`).join("")}</div>${placeHtml(g)}`;
+          <span class="n">${esc(i.p.name)}</span><span class="m">${esc(instMeta(g, i))}</span>${statsHtml(g, i, { compact: true, arrow: true, overlay: true })}</button>`).join("")}</div>${placeHtml(g)}`;
     }
     // spin styles
-    if (!u.spin) return `<div class="reel" id="reel"><span class="team">Spin a team</span><span class="yr">${g.mode.kind === "wc" ? "Nation + World Cup" : g.mode.single ? "Team" : "Team + season"}</span></div>
+    if (!u.spin) return `<div class="reel" id="reel"><span class="team">Spin a team</span><span class="yr">${g.mode.kind === "wc" ? "Nation + World Cup" : g.mode.single ? "Team" : { decade: "Team + decade", season: "Team + season", franchise: "Whole franchise" }[g.groupBy]}</span></div>
       <div><button class="btn big" id="spin">Spin</button></div>`;
     return `<div class="reel" id="reel"><span class="team">${esc(u.spin.label.title)}</span><span class="yr">${esc(u.spin.label.sub)}</span></div>
       <div class="row"><h3>${g.style === "spin3" ? "Pick one of three" : "Pick anyone"}</h3><span class="spacer"></span>
-        ${g.groupBy === "franchise" || g.mode.single ? "" : `<button class="btn ghost small" id="swapYear" ${g.yearSwaps ? "" : "disabled"} title="Same team, a different season">Year swap (${g.yearSwaps})</button>`}
-        <button class="btn ghost small" id="swapTeam" ${g.teamSwaps ? "" : "disabled"} title="${g.groupBy === "franchise" ? "A different franchise" : "Same season, a different team"}">Team swap (${g.teamSwaps})</button></div>
+        ${g.groupBy === "franchise" || g.mode.single ? "" : `<button class="btn ghost small" id="swapYear" ${g.yearSwaps ? "" : "disabled"} title="Same team, a different ${g.groupBy === "decade" ? "decade" : "season"}">${swapWord(g)} swap (${g.yearSwaps})</button>`}
+        <button class="btn ghost small" id="swapTeam" ${g.teamSwaps ? "" : "disabled"} title="${g.groupBy === "franchise" ? "A different franchise" : g.groupBy === "decade" ? "Same decade, a different team" : "Same season, a different team"}">Team swap (${g.teamSwaps})</button></div>
       <div class="cands">${u.spin.cands.map((i, k) => `<button class="cand ${u.sel === i ? "on" : ""}" data-k="${k}"><span class="n">${esc(i.p.name)} ${youngTag(i)}</span>
-        ${ratingHtml(g, i, "r")}<span class="m">${esc(E.posLabel(i))}${g.groupBy === "franchise" ? " · " + esc(seasonLabel(g, i)) : ""}${g.sport === "fb" && i.p.nat && g.mode.kind !== "wc" ? " · " + esc(window.FB_NATIONS[i.p.nat] || i.p.nat) : ""}</span></button>`).join("") || `<p class="empty">Nobody here fits your open spots. Use a swap.</p>`}</div>${placeHtml(g)}`;
+        ${ratingHtml(g, i, "r")}<span class="m">${esc(E.posLabel(i))}${g.groupBy !== "season" && !g.mode.single ? " · " + esc(seasonLabel(g, i)) : ""}${g.sport === "fb" && i.p.nat && g.mode.kind !== "wc" ? " · " + esc(window.FB_NATIONS[i.p.nat] || i.p.nat) : ""}</span>${statsHtml(g, i)}</button>`).join("") || `<p class="empty">Nobody here fits your open spots. Use a swap.</p>`}</div>${placeHtml(g)}`;
   }
   function placeHtml(g) {
     const sel = g.ui.sel; if (!sel) return `<p class="muted small">Choose a player, then where they play.</p>`;
@@ -407,7 +485,7 @@
       <p class="muted small">${total} players${total > 150 ? ", showing 150" : ""}</p>
       <div class="sal-list">${list.map(i => { const lock = !afford(i);
         return `<button class="cand ${u.sel === i ? "on" : ""} ${lock ? "locked" : ""}" data-sal="${i.p.id}" ${lock ? "disabled" : ""}><span class="n">${esc(i.p.name)} <span class="tag">${i.r}</span></span>
-          <span class="price">$${i.price}M<small>${E.posShort(i)}</small></span><span class="m">${esc(instMeta(g, i))}</span></button>`; }).join("") || `<p class="empty">No players match.</p>`}</div>`;
+          <span class="price">$${i.price}M<small>${E.posShort(i)}</small></span><span class="m">${esc(instMeta(g, i))}</span>${statsHtml(g, i, { compact: true, arrow: true })}</button>`; }).join("") || `<p class="empty">No players match.</p>`}</div>`;
   }
 
   function placeSel(idx) {
@@ -623,7 +701,7 @@
       <div class="two" style="margin-top:18px">
         <div class="panel"><h3 style="margin-bottom:12px">Your roster</h3><div class="roster-list">
           ${st.list.map(x => { const f = E.fit(x.inst, x.slot.pos); return `<div class="rl ${x === st.mvp ? "mvp" : ""}"><span class="p">${x.slot.pos === "BN" ? "BN" : x.slot.pos}</span>
-            <div><b>${esc(x.inst.p.name)}</b>${x === st.mvp ? ` <span class="tag hot">MVP</span>` : ""}${x.inst.young ? " " + youngTag(x.inst) : ""}<br><span class="muted small">${esc(instMeta(g, x.inst))}${f < 1 ? ` · ${Math.round(f * 100)}% fit` : ""}<br>${esc(x.line)}</span></div>
+            <div><b>${esc(x.inst.p.name)}</b>${x === st.mvp ? ` <span class="tag hot">MVP</span>` : ""}${x.inst.young ? " " + youngTag(x.inst) : ""}<br><span class="muted small">${esc(instMeta(g, x.inst))}${f < 1 ? ` · ${Math.round(f * 100)}% fit` : ""}<br><span class="simline">This season: ${esc(x.line)}</span></span>${statsHtml(Object.assign({}, g, { revealed: true }), x.inst, { prefix: "Real" })}</div>
             <span class="r">${x.inst.r}</span></div>`; }).join("")}</div></div>
         <div style="display:grid;gap:18px">
           <div class="panel"><h3 style="margin-bottom:12px">Season numbers</h3><div class="kv">
@@ -708,9 +786,33 @@
   }
 
   // ---------- DATABASE ----------
-  const dbState = { q: "", src: "n" };
+  const dbState = { q: "", src: "n", view: "pg", open: new Set() };
   const FB_POS_NAMES = { GK: "Goalkeeper", CB: "Centre-back", FB: "Full-back", DM: "Defensive mid", CM: "Central mid", AM: "Attacking mid", WM: "Wide mid", W: "Winger", ST: "Striker" };
   function dbTeam(p, t, y) { return p.src === "n" ? E.nbaTeamName(t, y) : p.src === "e" ? (window.EURO_TEAMS[t] || t) : t; }
+  function dbStatTable(p) {
+    const rows = p.seasons.concat(p.wc).filter(se => se.st && !se.stPrev).sort((x, y) => x.y - y.y);
+    if (!rows.length) return "";
+    const tot = dbState.view === "tot", bb = p.sport === "bb";
+    const f1 = (v) => v == null ? "–" : v.toFixed(1), f2 = (v) => v == null ? "–" : v.toFixed(2), pc = (m, a) => m == null || !a ? "–" : (100 * m / a).toFixed(1);
+    const n0 = (v) => v == null ? "–" : Math.round(v).toLocaleString("en-US");
+    let head, cells;
+    if (bb) {
+      head = tot ? ["Season", "Team", "Rtg", "G", "MIN", "PTS", "REB", "AST", "STL", "BLK", "TOV", "FGM", "FGA", "3PM", "3PA", "FTM", "FTA"] : ["Season", "Team", "Rtg", "G", "MIN", "PTS", "REB", "AST", "STL", "BLK", "TOV", "FG%", "3P%", "2P%", "FT%"];
+      cells = (se) => { const st = se.st, pg = (k) => st[k] == null ? "–" : f1(st[k] / st.g), team = dbTeam(p, se.t, se.y);
+        const p2m = st.fg != null ? st.fg - (st.p3 || 0) : null, p2a = st.fga != null ? st.fga - (st.p3a || 0) : null;
+        return tot ? [E.seasonStr(se.y), team, se.r, st.g, n0(st.mp), n0(st.pts), n0(st.trb), n0(st.ast), n0(st.stl), n0(st.blk), n0(st.tov), n0(st.fg), n0(st.fga), n0(st.p3), n0(st.p3a), n0(st.ft), n0(st.fta)]
+          : [E.seasonStr(se.y), team, se.r, st.g, pg("mp"), pg("pts"), pg("trb"), pg("ast"), pg("stl"), pg("blk"), pg("tov"), pc(st.fg, st.fga), st.p3a ? pc(st.p3, st.p3a) : "–", pc(p2m, p2a), pc(st.ft, st.fta)]; };
+    } else {
+      head = ["Season", "Team", "Rtg", "Apps", "Min", "Goals", "Ast", "G/90", "A/90", "xG", "SoT", "Drb", "Chances", "TklW", "Int", "Aerials", "CS", "YC", "RC"];
+      cells = (se) => { const st = se.st, d = st.d || {}, team = se.nat ? se.nat + " (WC)" : dbTeam(p, se.t, se.y), a = Math.max(1, st.apps);
+        const v = (x, isXg) => x == null ? "–" : tot ? (isXg ? x.toFixed(1) : x) : f2(x / a);
+        const p90 = (x) => st.min >= 90 ? f2(x * 90 / st.min) : "–";
+        return [se.nat ? se.y : E.seasonStr(se.y), team, se.r, st.apps, tot ? n0(st.min) : Math.round(st.min / a), tot ? (st.pen ? st.g + "(p" + st.pen + ")" : st.g) : f2(st.g / a), v(st.a), p90(st.g), p90(st.a),
+          v(d.xg, true), v(d.sot), v(d.drb), v(d.kp), v(d.tkl), v(d.int), v(d.aer), st.wc ? "–" : v(st.cs), st.wc ? "–" : st.yc, st.wc ? "–" : st.rc]; };
+    }
+    const body = rows.map(se => `<tr>${cells(se).map((c, k) => `<td${k <= 1 ? ' class="tl"' : ""}>${esc(String(c))}</td>`).join("")}</tr>`).join("");
+    return `<div class="stat-table"><table><thead><tr>${head.map((h, k) => `<th${k <= 1 ? ' class="tl"' : ""}>${h}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table></div>`;
+  }
   function renderDatabase() {
     const srcName = { n: "NBA", e: "EuroLeague", f: "Football" };
     const q = E.norm(dbState.q);
@@ -719,17 +821,19 @@
     const posOf = (p) => { const c = {}; p.seasons.concat(p.wc).forEach(s => (s.pos || []).forEach(x => c[x] = (c[x] || 0) + 1)); const top = Object.keys(c).sort((a, b) => c[b] - c[a])[0] || ""; return p.sport === "fb" ? (FB_POS_NAMES[top] || top) : top; };
     const counts = { n: E.DB.nba.length, e: E.DB.euro.length, f: E.DB.fb.length };
     app.innerHTML = `
-      <div class="section-head"><div><h1>Players</h1><p class="muted">${counts.n.toLocaleString()} NBA, ${counts.e} EuroLeague and ${counts.f.toLocaleString()} football players. NBA ratings come from real season stats (PER, BPM, Win Shares) plus awards; football ratings since 2012 from market value and goals; older legends are hand-rated.</p></div></div>
+      <div class="section-head"><div><h1>Players</h1><p class="muted">${counts.n.toLocaleString()} NBA, ${counts.e} EuroLeague and ${counts.f.toLocaleString()} football players. Open a player to see every season's real numbers. NBA ratings come from points, rebounds, assists, steals, blocks and shooting compared with that season's league, plus advanced stats and awards. Football ratings since 2012 come from market value, goals and assists; older legends are hand-rated.</p></div></div>
       <div class="panel"><div class="row" style="margin-bottom:14px"><input class="field" id="dbq" placeholder="Search by name" value="${esc(dbState.q)}" style="flex:1;min-width:200px">
-        <div class="tabs" style="margin:0">${Object.entries(srcName).map(([k, n]) => `<button data-src="${k}" class="${dbState.src === k ? "on" : ""}">${n}</button>`).join("")}</div></div>
+        <div class="tabs" style="margin:0">${Object.entries(srcName).map(([k, n]) => `<button data-src="${k}" class="${dbState.src === k ? "on" : ""}">${n}</button>`).join("")}</div>
+        <div class="tabs" style="margin:0">${[["pg", "Per game"], ["tot", "Season totals"]].map(([k, n]) => `<button data-view="${k}" class="${dbState.view === k ? "on" : ""}">${n}</button>`).join("")}</div></div>
         <p class="muted small" style="margin-bottom:10px">${all.length.toLocaleString()} players${all.length > 80 ? ", showing the best 80" : ""}</p>
         <div class="db-list">${list.map(({ p, pk }) => {
           const best = p.seasons.concat(p.wc).reduce((a, b) => (!a || b.r > a.r) ? b : a, null);
           const career = E.careerOf(p).map(c => esc(dbTeam(p, c.t, c.b)) + " " + c.a + (c.b !== c.a ? "-" + String(c.b + 1).slice(2) : "-" + String(c.a + 1).slice(2))).join(", ");
-          return `<details class="db-item"><summary><span><b>${esc(p.name)}</b> <span class="muted small">${esc(posOf(p))}${p.nat ? " · " + esc(window.FB_NATIONS[p.nat] || p.nat) : ""}</span></span><span class="pk">${pk}</span></summary>
-          <div class="body">${best ? `<span>Best season: ${esc(E.seasonStr(best.y))}${best.t ? " with " + esc(dbTeam(p, best.t, best.y)) : best.nat ? " World Cup with " + esc(best.nat) : ""} (${best.r})</span>` : ""}${career ? `<span>${career}</span>` : ""}${p.wc.length ? `<span>World Cups: ${p.wc.map(w => w.y).join(", ")}</span>` : ""}</div></details>`; }).join("") || `<p class="empty">No players found. Try another spelling.</p>`}</div></div>`;
+          return `<details class="db-item" data-pk="${esc(p.key)}" ${dbState.open.has(p.key) ? "open" : ""}><summary><span><b>${esc(p.name)}</b> <span class="muted small">${esc(posOf(p))}${p.nat ? " · " + esc(window.FB_NATIONS[p.nat] || p.nat) : ""}</span></span><span class="pk">${pk}</span></summary>
+          <div class="body">${best ? `<span>Best season: ${esc(E.seasonStr(best.y))}${best.t ? " with " + esc(dbTeam(p, best.t, best.y)) : best.nat ? " World Cup with " + esc(best.nat) : ""} (${best.r})</span>` : ""}${career ? `<span>${career}</span>` : ""}${p.wc.length ? `<span>World Cups: ${p.wc.map(w => w.y).join(", ")}</span>` : ""}${dbStatTable(p)}</div></details>`; }).join("") || `<p class="empty">No players found. Try another spelling.</p>`}</div></div>`;
     $("#dbq").oninput = (e) => { dbState.q = e.target.value; const pos = e.target.selectionStart; renderDatabase(); const n = $("#dbq"); n.focus(); n.setSelectionRange(pos, pos); };
-    app.onclick = (e) => { const b = e.target.closest("[data-src]"); if (b) { dbState.src = b.dataset.src; renderDatabase(); } };
+    app.onclick = (e) => { const b = e.target.closest("[data-src]"); if (b) { dbState.src = b.dataset.src; renderDatabase(); } const v = e.target.closest("[data-view]"); if (v) { dbState.view = v.dataset.view; renderDatabase(); } };
+    $$(".db-item").forEach(d => d.addEventListener("toggle", () => { if (d.open) dbState.open.add(d.dataset.pk); else dbState.open.delete(d.dataset.pk); }));
   }
 
   // ---------- SETTINGS ----------
@@ -798,6 +902,7 @@
     const click = (sel) => { const el = $(sel); if (el && !el.disabled) { e.preventDefault(); el.click(); return true; } return false; };
     if (k === " ") { click("#spin") || click("#deal") || click("#playSeason"); return; }
     if (k === "y") { click("#swapYear"); return; }
+    if (k === "i") { const sel = $("#action .cand.on [data-exp], #action .pcard.on [data-exp]") || $("#action [data-exp]"); if (sel) { e.preventDefault(); sel.click(); } return; }
     if (k === "g") { click("#swapTeam") || click("#redraw"); return; }
     if (/^[1-9]$/.test(k)) { const c = $$("#action .cand:not([disabled]), #action .pcard")[+k - 1]; if (c) { e.preventDefault(); c.click(); } return; }
     const pi = "qwert".indexOf(k);
