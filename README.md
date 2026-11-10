@@ -4,7 +4,7 @@ Draft legends, then try to go undefeated.
 
 - **82-0 (basketball):** All-Time NBA, 7 decades (1960s–2020s), 21 historic seasons up to 2025-26, and EuroLeague (34-0).
 - **38-0 (football):** 4, 6, 8 or 11 a side, with 6 to 10 formations each. World Cup 2026, All-Time World Cup, All-Time Everything, This Season, Premier League (all-time and now), LaLiga (all-time and now), plus 10 historic seasons.
-- 4 difficulties balanced separately for every version, plus a 1-5 season simulation level.
+- 5 difficulties: Easy, Normal, Hard and Impossible have every player and change how strong the opponents are; Don't try also removes the stars. The 1-5 season simulation level multiplies the hardness (×0.5, ×0.8, ×1, ×1.4, ×1.75).
 - Real positions: players can only play where they fit.
 - Spin by team + decade (default), one exact season, or whole franchise, with decade/year swaps and team swaps.
 - All-time versions: choose which decades are in the draft (2 or more, or all).

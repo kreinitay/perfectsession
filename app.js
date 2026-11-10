@@ -66,7 +66,7 @@
     ["salary", "Salary cap", "Every player is available, but stars cost more. Stay under budget."]
   ];
   const FORMATIONS = ["2-2-1", "2-1-2", "1-2-2", "3-1-1", "1-3-1", "1-1-3"];
-  const DIFF_ORDER = ["easy", "normal", "hard", "impossible"];
+  const DIFF_ORDER = ["easy", "normal", "hard", "impossible", "donttry"];
   const styleName = (id) => (STYLES.find(s => s[0] === id) || [])[1];
 
   // ---------- themes ----------
@@ -106,7 +106,7 @@
     const ov = document.createElement("div"); ov.className = "overlay";
     ov.innerHTML = `<div class="panel" role="dialog" aria-modal="true" aria-labelledby="htT"><h2 id="htT">How to play</h2>
       <ol class="howto">
-        <li><b>Pick a game.</b> 82-0 is basketball, 38-0 is football. Choose a version (all-time, a decade, a historic season, World Cup, a league) and a difficulty.</li>
+        <li><b>Pick a game.</b> 82-0 is basketball, 38-0 is football. Choose a version (all-time, a decade, a historic season, World Cup, a league) and a difficulty. Every player is in on every difficulty except Don't try; harder means stronger opponents.</li>
         <li><b>Draft your team.</b> Spin a random team and take a player from it, or pick from 5 cards, or spend a salary cap. By default you spin a <b>team and a decade</b> (Bulls, 1990s): the player counts for his whole run there that decade. You can switch to one exact season or a whole franchise. Don't like the spin? A <b>decade or year swap</b> keeps the team, a <b>team swap</b> keeps the decade or season.</li>
         <li><b>Read the numbers.</b> Every player shows his real stats: points, rebounds, assists, steals, blocks and shooting in basketball; apps, goals with penalties like 25(p6), assists and clean sheets in football. Turn stats and ratings off for ultra ball knowledge.</li>
         <li><b>Put players where they belong.</b> Basketball: a player's own position and the ones next to it are fine, two away costs 20%, further isn't allowed (no Isiah Thomas at center). Football: a striker can play midfield at -35% but never defense, and only keepers go in goal.</li>
@@ -258,7 +258,7 @@
     const decs = E.decadesOf(mode), pickedDecs = E.cleanDecades(mode, st.decMap[mode.id]) || decs;
     const tile = (m) => `<button class="tile ${m.id === st.modeId ? "on" : ""}" data-mode="${m.id}"><b>${esc(m.name)}</b><span>${esc(m.desc)}</span></button>`;
     const diffTile = (d, i) => `<button class="tile ${d === st.diff ? "on" : ""}" data-diff="${d}"><b>${E.DIFFS[d].name}</b><span>${esc(E.DIFFS[d].desc)}</span>
-      <span class="diff-meter">${[0, 1, 2, 3].map(k => `<i class="${k <= i ? "f" : ""}"></i>`).join("")}</span></button>`;
+      <span class="diff-meter">${[0, 1, 2, 3, 4].map(k => `<i class="${k <= i ? "f" : ""}"></i>`).join("")}</span></button>`;
     const styleTile = ([id, nm, ds]) => { const dis = id === "salary" && !mode.salary; return `<button class="tile ${id === st.style ? "on" : ""} ${dis ? "disabled" : ""}" data-style="${id}" ${dis ? "disabled" : ""}><b>${nm}</b><span>${dis ? "Only in All-Time NBA." : esc(ds)}</span></button>`; };
     app.innerHTML = `
       <div class="section-head"><div><h1>${sp === "bb" ? "82-0" : "38-0"} setup</h1><p class="muted">${sp === "bb" ? "Basketball: build a starting five, win every game." : "Football: 4, 6, 8 or 11 a side, win all 38."}</p></div></div>
@@ -270,7 +270,7 @@
             ${decs.length >= 3 ? `<div class="dec-pick"><div class="row"><b>Decades in the draft</b><span class="muted small">Pick 2 or more, or all of them.</span><span class="spacer"></span><button class="btn ghost small" data-decall="1" ${pickedDecs.length === decs.length ? "disabled" : ""}>All decades</button></div>
               <div class="chips">${decs.map(d => `<button class="chip ${pickedDecs.includes(d) ? "on" : ""}" data-dec="${d}" aria-pressed="${pickedDecs.includes(d)}">${d}s</button>`).join("")}</div></div>` : ""}</div>
           <hr class="sep">
-          <div class="step"><h3>Difficulty</h3><p class="muted small">Each version is balanced on its own, so Easy in one is not the same as Easy in another.</p>
+          <div class="step"><h3>Difficulty</h3><p class="muted small">Every player is in on every difficulty except Don't try. Difficulty sets how good the other teams are.</p>
             <div class="tiles diff-tiles">${DIFF_ORDER.map(diffTile).join("")}</div></div>
           <hr class="sep">
           <div class="step"><h3>How you draft</h3><p class="muted small">How players are offered to you each round.</p><div class="tiles">${STYLES.map(styleTile).join("")}</div></div>
@@ -283,8 +283,8 @@
             ].map(([id, nm, ds]) => { const on = mode.single ? id === "season" : (st.groupBy || "decade") === id, dis = mode.single && id !== "season";
               return `<button class="tile ${on ? "on" : ""} ${dis ? "disabled" : ""}" data-group="${id}" ${dis ? "disabled" : ""}><b>${nm}${id === "decade" ? ` <span class="tag">Default</span>` : ""}</b><span>${ds}</span></button>`; }).join("")}</div></div>
           <hr class="sep">
-          <div class="step"><h3>Season simulation</h3><p class="muted small">How strong the other teams are once your season starts. 3 is normal.</p>
-            <div class="tiles sim-tiles">${[1, 2, 3, 4, 5].map(n => `<button class="tile ${(st.simLevel || 3) === n ? "on" : ""}" data-sim="${n}"><b>${n}</b><span>${E.SIM_LEVELS[n]}</span></button>`).join("")}</div></div>
+          <div class="step"><h3>Season simulation</h3><p class="muted small">Multiplies your difficulty's hardness. 3 is normal (×1).</p>
+            <div class="tiles sim-tiles">${[1, 2, 3, 4, 5].map(n => `<button class="tile ${(st.simLevel || 3) === n ? "on" : ""}" data-sim="${n}"><b>${n}</b><span>${E.SIM_LEVELS[n]} · ×${E.SIM_MULT[n - 1]}</span></button>`).join("")}</div></div>
           <hr class="sep">
           ${sp === "fb" && mode.kind !== "wc" ? `<div class="step"><h3>Your league</h3><p class="muted small">Who you play your 38 league games against. Every league is balanced the same.</p>
             <div class="tiles">${E.BIG5.map(l => `<button class="tile ${(st.league || mode.homeLeague || "GB1") === l ? "on" : ""}" data-league="${l}"><b>${E.LEAGUE_NAMES[l]}</b><span>${{ GB1: "England", ES1: "Spain", IT1: "Italy", L1: "Germany", FR1: "France" }[l]}</span></button>`).join("")}</div>
@@ -305,7 +305,7 @@
             <dt>${sp === "bb" ? "Roster" : "Formation"}</dt><dd>${sp === "bb" ? (st.bench ? "5 + 3 bench" : "Starting 5") : (st.size || 6) + " a side · " + st.formation}</dd><dt>Goal</dt><dd>${mode.games}-0 and the title</dd>
             <dt>Swaps</dt><dd>${st.style === "salary" ? "None" : st.style === "cards" ? E.DIFFS[st.diff].skips + " redraws" : mode.single || st.groupBy === "franchise" ? E.DIFFS[st.diff].skips + " team" : E.DIFFS[st.diff].skips + (st.groupBy === "season" ? " year + " : " decade + ") + E.DIFFS[st.diff].skips + " team"}</dd>
             ${decs.length >= 3 ? `<dt>Decades</dt><dd>${pickedDecs.length === decs.length ? "All" : pickedDecs.map(d => "'" + String(d).slice(2) + "s").join(", ")}</dd>` : ""}<dt>Spin by</dt><dd>${mode.single ? "Team" : { decade: "Team + decade", season: "Team + season", franchise: "Whole franchise" }[st.groupBy || "decade"]}</dd>
-            <dt>Season sim</dt><dd>${st.simLevel || 3} · ${E.SIM_LEVELS[st.simLevel || 3]}</dd>${sp === "fb" && mode.kind !== "wc" ? `<dt>League</dt><dd>${E.LEAGUE_NAMES[st.league || mode.homeLeague || "GB1"]}${st.ucl !== false ? " + UCL" : ""}</dd>` : ""}</dl>
+            <dt>Season sim</dt><dd>${st.simLevel || 3} · ×${E.SIM_MULT[(st.simLevel || 3) - 1]} hardness</dd>${sp === "fb" && mode.kind !== "wc" ? `<dt>League</dt><dd>${E.LEAGUE_NAMES[st.league || mode.homeLeague || "GB1"]}${st.ucl !== false ? " + UCL" : ""}</dd>` : ""}</dl>
           <label class="toggle"><input type="checkbox" id="showR" ${st.showRatings !== false || st.style === "salary" ? "checked" : ""} ${st.style === "salary" ? "disabled" : ""}><span>Show ratings<br><span class="muted small">The 45-99 number for each player</span></span></label>
           <label class="toggle"><input type="checkbox" id="showS" ${st.showStats !== false ? "checked" : ""}><span>Show player stats<br><span class="muted small">${sp === "bb" ? "PTS, REB, AST, STL, BLK, 3P%, 2P%, FT%" : "Apps, goals (penalties), assists, clean sheets, minutes, cards"}</span></span></label>
           ${st.showStats === false && st.showRatings === false && st.style !== "salary" ? `<p class="ultra">Ultra ball knowledge: names only.</p>` : ""}
@@ -449,8 +449,35 @@
       <div class="row"><h3>${g.style === "spin3" ? "Pick one of three" : "Pick anyone"}</h3><span class="spacer"></span>
         ${g.groupBy === "franchise" || g.mode.single ? "" : `<button class="btn ghost small" id="swapYear" ${g.yearSwaps ? "" : "disabled"} title="Same team, a different ${g.groupBy === "decade" ? "decade" : "season"}">${swapWord(g)} swap (${g.yearSwaps})</button>`}
         <button class="btn ghost small" id="swapTeam" ${g.teamSwaps ? "" : "disabled"} title="${g.groupBy === "franchise" ? "A different franchise" : g.groupBy === "decade" ? "Same decade, a different team" : "Same season, a different team"}">Team swap (${g.teamSwaps})</button></div>
-      <div class="cands">${u.spin.cands.map((i, k) => `<button class="cand ${u.sel === i ? "on" : ""}" data-k="${k}"><span class="n">${esc(i.p.name)} ${youngTag(i)}</span>
+      ${sortBar(g)}
+      <div class="cands">${sortedCands(g, u.spin.cands).map(([i, k]) => `<button class="cand ${u.sel === i ? "on" : ""}" data-k="${k}"><span class="n">${esc(i.p.name)} ${youngTag(i)}</span>
         ${ratingHtml(g, i, "r")}<span class="m">${esc(E.posLabel(i))}${g.groupBy !== "season" && !g.mode.single ? " · " + esc(seasonLabel(g, i)) : ""}${g.sport === "fb" && i.p.nat && g.mode.kind !== "wc" ? " · " + esc(window.FB_NATIONS[i.p.nat] || i.p.nat) : ""}</span>${statsHtml(g, i)}</button>`).join("") || `<p class="empty">Nobody here fits your open spots. Use a swap.</p>`}</div>${placeHtml(g)}`;
+  }
+  // Sorting the spin list: by points (football: goals) unless stats are hidden
+  const SORTS = {
+    bb: [["pts", "PTS"], ["reb", "REB"], ["ast", "AST"], ["stl", "STL"], ["blk", "BLK"], ["p3", "3P%"], ["fg", "FG%"], ["ft", "FT%"]],
+    fb: [["g", "Goals"], ["a", "Assists"], ["ga", "G+A"], ["ga90", "G+A per 90"], ["xg", "xG"], ["apps", "Apps"], ["cs", "Clean sheets"]]
+  };
+  const sortPref = () => store.get("ps_sort", { bb: "pts", fb: "g" });
+  function sortKey(g) {
+    const k = sortPref()[g.sport];
+    if (k === "pos" || (k === "r" && g.showRatings)) return k;
+    if (!g.showStats) return "pos";
+    return SORTS[g.sport].some(x => x[0] === k) ? k : SORTS[g.sport][0][0];
+  }
+  function sortedCands(g, list) {
+    const k = sortKey(g), POSO = g.sport === "bb" ? ["PG", "SG", "SF", "PF", "C"] : ["GK", "CB", "FB", "DM", "CM", "WM", "AM", "W", "ST"];
+    const pos = (i) => POSO.indexOf(i.pos[0]);
+    const arr = list.map((i, idx) => [i, idx]);
+    if (k === "pos") return arr.sort((a, b) => pos(a[0]) - pos(b[0]) || b[0].r - a[0].r);
+    if (k === "r") return arr.sort((a, b) => b[0].r - a[0].r);
+    const v = (i) => { const x = E.statValue(i, k); return x == null ? -1 : x; };
+    return arr.sort((a, b) => v(b[0]) - v(a[0]) || b[0].r - a[0].r);
+  }
+  function sortBar(g) {
+    if (!g.ui.spin || g.ui.spin.cands.length < 4) return "";
+    const k = sortKey(g), opts = (g.showStats ? SORTS[g.sport] : []).concat(g.showRatings ? [["r", "Rating"]] : []).concat([["pos", "Position"]]);
+    return `<div class="sortbar" role="group" aria-label="Sort players"><span>Sort</span>${opts.map(([id, nm]) => `<button class="${id === k ? "on" : ""}" data-sort="${id}" aria-pressed="${id === k}">${nm}</button>`).join("")}</div>`;
   }
   function placeHtml(g) {
     const sel = g.ui.sel; if (!sel) return `<p class="muted small">Choose a player, then where they play.</p>`;
@@ -526,6 +553,7 @@
       const b = e.target.closest("button, [data-slot]"); if (!b) return;
       if (b.id === "quit") { if (confirm("Quit this draft? Progress will be lost.")) go(S.daily ? "home" : "setup"); return; }
       if (b.id === "help") return howTo();
+      if (b.dataset.sort) { const pr = sortPref(); pr[g.sport] = b.dataset.sort; store.set("ps_sort", pr); return renderDraft(); }
       if (b.id === "spin") return doSpin(false);
       if (b.id === "swapYear") return doSpin("year");
       if (b.id === "swapTeam") return doSpin("team");
@@ -735,7 +763,8 @@
     { id: "unbeaten", name: "The Unbeatables", desc: "Perfect season and the title in the same run.", test: (r) => r.perfect && r.won },
     { id: "hard", name: "Hard Knocks", desc: "Win a title on Hard.", test: (r) => r.won && r.diff === "hard" },
     { id: "imp", name: "Nothing Is Impossible", desc: "Win a title on Impossible.", test: (r) => r.won && r.diff === "impossible" },
-    { id: "knower", name: "Ball Knower", desc: "Perfect season on Hard or Impossible with ratings hidden.", test: (r) => r.perfect && r.hidden && (r.diff === "hard" || r.diff === "impossible") },
+    { id: "knower", name: "Ball Knower", desc: "Perfect season on Hard or harder with ratings hidden.", test: (r) => r.perfect && r.hidden && ["hard", "impossible", "donttry"].includes(r.diff) },
+    { id: "donttry", name: "Told You Not To", desc: "Win a title on Don't try.", test: (r) => r.won && r.diff === "donttry" },
     { id: "euro", name: "Euro Step", desc: "Win the EuroLeague Final Four.", test: (r) => r.won && r.src === "euro" },
     { id: "cap", name: "Capologist", desc: "Win a title in salary cap mode.", test: (r) => r.won && r.style === "salary" },
     { id: "decades", name: "Time Traveler", desc: "Play all seven NBA decades.", test: (r, h) => new Set(h.filter(x => x.kind === "decade").map(x => x.mode)).size >= 7 },

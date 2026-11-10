@@ -264,18 +264,23 @@
   }
 
   // ---------- Difficulty ----------
+  // Every difficulty has every player. Difficulty sets how strong the opponents are;
+  // only "Don't try" also takes the stars away.
   const DIFFS = {
-    easy:       { name: "Easy",       lo: 0.70, hi: 1.00, youngW: 1,   skips: 3, desc: "Superstars only. Pure fun." },
-    normal:     { name: "Normal",     lo: 0.40, hi: 1.00, youngW: 1,   skips: 2, desc: "Stars and solid starters. Some ball knowledge needed." },
-    hard:       { name: "Hard",       lo: 0.16, hi: 0.93, youngW: 2.4, skips: 1, desc: "Less famous players and more young ones, but an easier season to make up for it." },
-    impossible: { name: "Impossible", lo: 0.00, hi: 0.80, youngW: 2.6, skips: 0, desc: "Deep cuts and role players, and stronger opponents." }
+    easy:       { name: "Easy",       lo: 0, hi: 1,    youngW: 1,   skips: 3, desc: "Every player is in. Weak opponents. 3 swaps." },
+    normal:     { name: "Normal",     lo: 0, hi: 1,    youngW: 1,   skips: 2, desc: "Every player is in. Real opponents, ball knowledge pays off. 2 swaps." },
+    hard:       { name: "Hard",       lo: 0, hi: 1,    youngW: 1,   skips: 1, desc: "Every player is in. Strong opponents, you need a near-perfect draft. 1 swap." },
+    impossible: { name: "Impossible", lo: 0, hi: 1,    youngW: 1,   skips: 0, desc: "Every player is in. Elite opponents and no swaps." },
+    donttry:    { name: "Don't try",  lo: 0, hi: 0.80, youngW: 2.6, skips: 0, desc: "The only mode without the stars: role players and deep cuts, elite opponents, no swaps." }
   };
-  const TARGETS = {
-    bb: { easy: 0.986, normal: 0.9755, hard: 0.979, impossible: 0.966 },
-    fb: { easy: 0.975, normal: 0.962, hard: 0.965, impossible: 0.948 }
+  // chance to win one game for a typical good draft, before the season-sim level
+  const TARGETS = {   // tuned so a strong draft goes perfect about 29% / 14% / 7% / 3% / 0.5% of the time
+    bb: { easy: 0.9885, normal: 0.9756, hard: 0.9614, impossible: 0.9571, donttry: 0.9641 },
+    fb: { easy: 0.9975, normal: 0.977, hard: 0.943, impossible: 0.903, donttry: 0.8524 }
   };
   const SIM_LEVELS = { 1: "Very easy", 2: "Easy", 3: "Normal", 4: "Hard", 5: "Very hard" };
-  const SIM_ADJ = { bb: [0.012, 0.006, 0, -0.007, -0.014], fb: [0.014, 0.007, 0, -0.008, -0.016] };
+  // season-sim level multiplies the difficulty's hardness (the chance of dropping a game)
+  const SIM_MULT = [0.5, 0.8, 1, 1.4, 1.75];
   function filtered(pool, diff) {
     const D = DIFFS[diff];
     const lo = pool.pct(D.lo), hi = D.hi >= 1 ? 999 : pool.pct(D.hi);
@@ -423,6 +428,21 @@
     if (i.pos[0] === "GK") return [["APPS", st.apps]].concat(st.wc ? [] : [["CLEAN SHEETS", st.cs]]);
     return [["GOALS", gWord(st)], ["ASSISTS", st.a]];
   }
+  // one number per player for sorting lists (null = no stat)
+  function statValue(i, k) {
+    const st = i.st; if (!st) return null;
+    if (i.p.sport === "bb") {
+      if (k === "p3") return st.p3a >= 25 ? st.p3 / st.p3a : null;
+      if (k === "fg") return st.fga ? st.fg / st.fga : null;
+      if (k === "ft") return st.fta >= 25 ? st.ft / st.fta : null;
+      return pgOf(st, { pts: "pts", reb: "trb", ast: "ast", stl: "stl", blk: "blk" }[k] || k);
+    }
+    if (k === "g") return st.g; if (k === "a") return st.a; if (k === "ga") return st.g + st.a;
+    if (k === "ga90") return st.min >= 450 ? (st.g + st.a) * 90 / st.min : null;
+    if (k === "apps") return st.apps; if (k === "cs") return st.wc ? null : st.cs;
+    if (k === "xg") return st.d && st.d.xg != null ? st.d.xg : null;
+    return null;
+  }
   const POS_GROUP = { GK: "GK", CB: "DEF", FB: "DEF", DM: "MID", CM: "MID", AM: "MID", WM: "MID", W: "ATT", ST: "ATT" };
   // Full numbers behind the arrow: rows of [label, per game, total] plus one-value rows
   function statDetail(i) {
@@ -546,7 +566,7 @@
 
   // ---------- Salary cap ----------
   const price = (r) => Math.max(1, Math.round(1 + 59 * Math.pow(clamp((r - 62) / 37, 0, 1), 2.1)));
-  const BUDGET = { easy: [175, 230], normal: [150, 198], hard: [132, 172], impossible: [112, 148] };
+  const BUDGET = { easy: [175, 230], normal: [150, 198], hard: [140, 184], impossible: [132, 172], donttry: [112, 148] };
   function salaryList(pool) {
     const best = {};
     pool.inst.forEach(i => { if (!best[i.p.key] || best[i.p.key].r < i.r) best[i.p.key] = i; });
@@ -581,7 +601,8 @@
 
   // ---------- Calibration ----------
   function smartDraft(g) {
-    const sim = { mode: g.mode, diff: g.diff, style: g.style, sport: g.sport, fgroups: g.fgroups, fpool: g.fpool, groupBy: g.groupBy, roster: g.roster.map(r => ({ slot: r.slot, inst: null })) };
+    const calDiff = g.diff === "donttry" ? "donttry" : "normal";   // same yardstick for every difficulty with the full pool
+    const sim = { mode: g.mode, diff: calDiff, style: g.style, sport: g.sport, fgroups: g.fgroups, fpool: g.fpool, groupBy: g.groupBy, roster: g.roster.map(r => ({ slot: r.slot, inst: null })) };
     const val = (i, s) => i.r * fit(i, s.slot.pos) * (s.slot.starter ? 1 : 0.9);
     if (g.style === "salary") {
       let budget = g.budget; const n = sim.roster.length;
@@ -597,7 +618,7 @@
       }
       return teamRating(g.sport, sim.roster).ovr;
     }
-    let skips = DIFFS[g.diff].skips, guard = 0;
+    let skips = DIFFS[calDiff].skips, guard = 0;
     while (openSlots(sim.roster).length && guard++ < 40) {
       const opts = g.style === "cards" ? cards(sim) : spin(sim).cands;
       if (!opts.length) break;
@@ -625,7 +646,7 @@
   }
   const calCache = {};
   function calibrate(g) {
-    const ck = [g.mode.id, g.diff, g.style, g.opt.bench ? 1 : 0, g.opt.formation || "", g.groupBy, (g.decades || []).join(",")].join("|");
+    const ck = [g.mode.id, g.diff === "donttry" ? "dt" : "all", g.style, g.opt.bench ? 1 : 0, g.opt.formation || "", g.groupBy, (g.decades || []).join(",")].join("|");
     let ref = calCache[ck];
     if (ref === undefined) {
       const savedF = RNG.f; RNG.seed("cal|" + ck);
@@ -639,8 +660,8 @@
     if (g.mode.games === 34) p -= 0.012;
     if (g.mode.tier) p -= (g.mode.tier - 3) * 0.003;
     if (g.style === "salary") p += 0.004;
-    p += SIM_ADJ[g.sport][g.simLevel - 1] || 0;
-    p = clamp(p, 0.6, 0.995);
+    p = 1 - (1 - p) * (SIM_MULT[g.simLevel - 1] || 1);
+    p = clamp(p, 0.6, 0.999);
     g.ref = ref; g.oppMean = ref - gapFor(g.sport, p); g.pTarget = p;
     return g;
   }
@@ -679,7 +700,7 @@
       else if (multi) name = g.sport === "bb" ? seasonStr(c.y) + " " + (g.mode.src === "euro" ? name : shortName(name)) : name + " " + seasonStr(c.y);
       const z = 1.7 - (3.4 * i) / Math.max(1, nOpp - 1);
       const spread = g.sport === "fb" ? 1.5 : 2.4;
-      return { name, team: c.team, y: c.y, rating: g.oppMean + z * spread * 0.85 + gauss() * 0.5 + (g.diff === "impossible" ? 0.4 : 0), w: 0, l: 0, d: 0, gf: 0, ga: 0, pts: 0 };
+      return { name, team: c.team, y: c.y, rating: g.oppMean + z * spread * 0.85 + gauss() * 0.5 + (g.diff === "impossible" || g.diff === "donttry" ? 0.4 : 0), w: 0, l: 0, d: 0, gf: 0, ga: 0, pts: 0 };
     });
   }
 
@@ -932,10 +953,10 @@
   const peakOf = (p) => Math.max(0, ...p.seasons.map(s => s.r), ...p.wc.map(w => w.r));
 
   const Engine = {
-    RNG, DIFFS, SIM_LEVELS, NBA_ORDER, NBA_SEASONS, FB_SPECIAL, LEAGUE_NAMES, BIG5, seasonStr, initDB, DB, NOW,
+    RNG, DIFFS, TARGETS, SIM_LEVELS, SIM_MULT, NBA_ORDER, NBA_SEASONS, FB_SPECIAL, LEAGUE_NAMES, BIG5, seasonStr, initDB, DB, NOW,
     get modes() { return this._modes || (this._modes = buildModes()); },
     getPool, newGame, calibrate, spin, swapYear, swapTeam, cards, fit, placeable, posLabel, posShort, teamRating, price, spent,
-    runSeason, runPlayoffs, playerStats, grade, statChips, statDetail, decadesOf, FB_SIZES, cleanDecades, statNote, spanText, decadeOf, nbaTeamName, teamName, labelFor, shuffle, hashStr, careerOf, peakOf, norm
+    runSeason, runPlayoffs, playerStats, grade, statChips, statDetail, statValue, decadesOf, FB_SIZES, cleanDecades, statNote, spanText, decadeOf, nbaTeamName, teamName, labelFor, shuffle, hashStr, careerOf, peakOf, norm
   };
   G.Engine = Engine;
 })(typeof window !== "undefined" ? window : globalThis);

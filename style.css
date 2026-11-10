@@ -475,3 +475,11 @@ hr.sep { border: 0; border-top: 1px solid var(--line); margin: 16px 0; }
   .field-view.n11 .slot .sp { font-size: .7rem; }
   .field-view.n11 .slot .rt { font-size: .8rem; }
 }
+
+/* Sort bar for the spin list */
+.sortbar { display: flex; gap: 6px; align-items: center; overflow-x: auto; scrollbar-width: none; padding: 2px 0 10px; margin-top: 4px; }
+.sortbar::-webkit-scrollbar { display: none; }
+.sortbar > span { font-size: .7rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); margin-right: 2px; flex: none; }
+.sortbar button { flex: none; padding: 6px 11px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--surface); color: var(--muted); font-size: .78rem; font-weight: 700; }
+.sortbar button:hover { border-color: var(--accent); color: var(--text); }
+.sortbar button.on { background: var(--grad); border-color: transparent; color: var(--ink); }
